@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily passive check for jumpserver-ha updates
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=30m
+Persistent=true
+Unit=jumpserver-ha-update.service
+
+[Install]
+WantedBy=timers.target

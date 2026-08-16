@@ -1,0 +1,9 @@
+#!/bin/sh
+cat <<'EOF'
+
+*** JUMPSERVER HA — STANDBY / DR NODE ***
+This node receives replicated operational data but must not run collection or
+infrastructure-changing automation while the active peer is healthy.
+Before promotion, verify the active peer, VRRP/floating-IP ownership and the
+last successful sync. Runbook: /etc/jumpserver-ha/README.md
+EOF

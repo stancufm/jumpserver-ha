@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic passive synchronization of standby jumpserver
+
+[Timer]
+OnCalendar=*-*-* *:0/5:00
+RandomizedDelaySec=30s
+Persistent=true
+Unit=shadow-ha-sync.service
+
+[Install]
+WantedBy=timers.target

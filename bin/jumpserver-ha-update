@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Check and explicitly apply safe fast-forward releases of this project.
+set -euo pipefail
+readonly project_dir='/opt/jumpserver-ha'
+readonly state_dir='/var/lib/jumpserver-ha'
+readonly branch='main'
+readonly log_tag='jumpserver-ha-update'
+
+usage() { echo "Usage: jumpserver-ha-update --check|--apply"; }
+[[ $# -eq 1 ]] || { usage >&2; exit 2; }
+mode="$1"
+[[ "$mode" == '--check' || "$mode" == '--apply' ]] || { usage >&2; exit 2; }
+[[ "$(id -u)" -eq 0 ]] || { echo 'Run as root.' >&2; exit 1; }
+[[ -d "$project_dir/.git" ]] || { echo "Missing Git checkout: $project_dir" >&2; exit 1; }
+install -d -o root -g root -m 0750 "$state_dir"
+exec 9>"${state_dir}/update.lock"
+flock -n 9 || exit 0
+
+git -C "$project_dir" diff --quiet || { echo 'Local changes present; refusing update.' >&2; exit 1; }
+git -C "$project_dir" fetch --quiet origin "$branch"
+local_commit="$(git -C "$project_dir" rev-parse HEAD)"
+remote_commit="$(git -C "$project_dir" rev-parse "origin/$branch")"
+printf '%s local=%s remote=%s\n' "$(date --iso-8601=seconds)" "$local_commit" "$remote_commit" > "${state_dir}/last-update-check"
+if [[ "$local_commit" == "$remote_commit" ]]; then
+  logger -t "$log_tag" 'No update available.'
+  exit 0
+fi
+if [[ "$mode" == '--check' ]]; then
+  logger -t "$log_tag" "Update available: $local_commit -> $remote_commit. Run jumpserver-ha-update --apply after review."
+  echo "Update available: $local_commit -> $remote_commit"
+  exit 0
+fi
+git -C "$project_dir" merge-base --is-ancestor HEAD "origin/$branch" || { echo 'Update is not a fast-forward; refusing.' >&2; exit 1; }
+git -C "$project_dir" merge --ff-only "origin/$branch"
+"$project_dir/install.sh" --role standby --active-address "$(. /etc/jumpserver-ha/role.conf; echo "$JUMPSERVER_HA_ACTIVE_ADDRESS")" --ssh-port "$(. /etc/jumpserver-ha/role.conf; echo "$JUMPSERVER_HA_SSH_PORT")" --vip "$(. /etc/jumpserver-ha/role.conf; echo "$JUMPSERVER_HA_VIP")" --upgrade
+logger -t "$log_tag" "Updated and reinstalled $local_commit -> $remote_commit."

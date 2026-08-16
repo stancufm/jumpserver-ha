@@ -1,0 +1,8 @@
+[Unit]
+Description=Pull operational configuration from active jumpserver
+Wants=network-online.target
+After=network-online.target keepalived.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/shadow-ha-sync

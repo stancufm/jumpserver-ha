@@ -1,0 +1,8 @@
+[Unit]
+Description=Check for an available jumpserver-ha release
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/jumpserver-ha-update --check
