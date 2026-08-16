@@ -13,9 +13,10 @@ sudo journalctl -u shadow-ha-sync --no-pager -n 100
 sudo jumpserver-ha-update --check
 ```
 
-`jumpserver-ha-update.timer` is a daily **check only**. It fetches `origin/main`,
-records the local/remote commit in `/var/lib/jumpserver-ha/last-update-check`,
-and logs if an update is available. It never changes the installed checkout.
+`jumpserver-ha-update.timer` is a daily **check only**. It downloads the public
+HTTPS source archive with `wget`, compares the local and remote `VERSION`,
+records that result in `/var/lib/jumpserver-ha/last-update-check`, and logs if
+an update is available. It never changes the installed checkout.
 
 After reviewing the release, apply it explicitly:
 
@@ -23,9 +24,10 @@ After reviewing the release, apply it explicitly:
 sudo jumpserver-ha-update --apply
 ```
 
-The updater refuses a dirty working tree and non-fast-forward history, then
-re-runs the idempotent installer. It preserves the existing restricted SSH key
-and host-key pin; it does not create, copy, or print secrets.
+The updater stages the archive under `/opt`, retains the prior tree as
+`/opt/jumpserver-ha.previous`, and re-runs the idempotent installer. If that
+installer fails, it restores the previous tree. It preserves the existing
+restricted SSH key and host-key pin; it does not create, copy, or print secrets.
 
 ## Incident/promotion
 

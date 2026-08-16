@@ -61,6 +61,7 @@ install -o root -g root -m 0644 "$project_dir/systemd/jumpserver-ha-update.servi
 install -o root -g root -m 0644 "$project_dir/systemd/jumpserver-ha-update.timer" /etc/systemd/system/jumpserver-ha-update.timer
 install -o root -g root -m 0644 "$project_dir/docs/STANDBY-RUNBOOK.md" /etc/jumpserver-ha/README.md
 install -o root -g root -m 0644 "$project_dir/docs/STANDBY-RUNBOOK.md" /etc/shadow-ha/README.md
+install -o root -g root -m 0644 "$project_dir/VERSION" /etc/jumpserver-ha/version
 install -o root -g root -m 0644 "$project_dir/templates/motd-standby" /etc/profile.d/99-shadow-ha-warning.sh
 chmod 0644 /etc/profile.d/99-shadow-ha-warning.sh
 

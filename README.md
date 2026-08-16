@@ -43,11 +43,14 @@ preserves its existing root-only sync key and pinned active-host key; those
 secrets are deliberately provisioned outside Git.
 
 ```bash
-git clone https://github.com/stancufm/jumpserver-ha.git /opt/jumpserver-ha
+sudo install -d -o root -g root -m 0755 /opt/jumpserver-ha
+sudo wget -qO- https://github.com/stancufm/jumpserver-ha/archive/refs/heads/main.tar.gz \
+  | sudo tar -xz --strip-components=1 -C /opt/jumpserver-ha
 cd /opt/jumpserver-ha
 sudo ./install.sh --role standby --active-address ACTIVE_PHYSICAL_IP --ssh-port 42202 --vip FLOATING_VIP
 ```
 
 The installer enables a daily `jumpserver-ha-update.timer` that only checks for
-new fast-forward releases and logs their availability. It never auto-applies a
-change. Apply after review with `sudo jumpserver-ha-update --apply`.
+new releases and logs their availability. It never auto-applies a change. It
+uses HTTPS + `wget`, so it does not require a Git client on an older standby.
+Apply after review with `sudo jumpserver-ha-update --apply`.
