@@ -54,3 +54,11 @@ The installer enables a daily `jumpserver-ha-update.timer` that only checks for
 new releases and logs their availability. It never auto-applies a change. It
 uses HTTPS + `wget`, so it does not require a Git client on an older standby.
 Apply after review with `sudo jumpserver-ha-update --apply`.
+
+## Release discipline
+
+The passive updater compares the repository's `VERSION` file. Increment that
+file for every change intended for deployment, commit it to `main`, and let the
+standby timer report the new version. Changes without a `VERSION` increment are
+documentation/source work only and are intentionally not picked up by the
+installed node.

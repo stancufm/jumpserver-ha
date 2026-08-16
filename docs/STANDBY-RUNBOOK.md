@@ -28,6 +28,8 @@ The updater stages the archive under `/opt`, retains the prior tree as
 `/opt/jumpserver-ha.previous`, and re-runs the idempotent installer. If that
 installer fails, it restores the previous tree. It preserves the existing
 restricted SSH key and host-key pin; it does not create, copy, or print secrets.
+Only commits that increment the repository `VERSION` are eligible for
+installation.
 
 ## Incident/promotion
 
