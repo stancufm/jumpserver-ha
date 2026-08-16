@@ -1,0 +1,6 @@
+---
+- name: Configure active and standby jump servers
+  hosts: jumpservers
+  become: true
+  roles:
+    - role: jumpserver_ha

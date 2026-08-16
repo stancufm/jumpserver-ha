@@ -1,0 +1,5 @@
+*.retry
+.ansible/
+inventory.ini
+group_vars/all/vault.yml
+keys/

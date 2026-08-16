@@ -1,0 +1,5 @@
+*** JUMPSERVER HA: {{ jumpserver_ha_role | upper }} ***
+{% if jumpserver_ha_role == 'standby' %}This server is a passive DR replica. Operational collection timers must remain disabled.
+Before promotion, verify the active peer, VRRP/floating-IP ownership and the latest sync.
+{% else %}This server is the active node. It is the only node permitted to run operational collection timers.
+{% endif %}Runbook: {{ jumpserver_ha_runbook_path }}
