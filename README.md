@@ -22,10 +22,19 @@ Service users and non-login accounts are excluded. Existing conflicting names,
 UIDs or GIDs stop the apply before home data is changed. Accounts and files are
 never deleted merely because they disappeared from the active account list.
 
-Private SSH/GPG keys, API credential files, password-store content and GR SSH
-audits are excluded by default, including when they are below an approved
-shared path. They are included only with the explicit `--sync-secrets` decision. Review
-[the security model](docs/SECURITY.md) before enabling it.
+Partial mode is the reusable default: password hashes, private SSH/GPG keys,
+API credential files, password-store content and GR SSH audits are excluded.
+`--full-clone` changes the contract for a designated clone such as
+`shadow-m`/`shadow-s`: it copies each selected account's local `/etc/shadow`
+hash, lock state and aging fields, then mirrors its complete home directory.
+The legacy `--sync-secrets` option is accepted as an alias. No plaintext
+password or GPG passphrase is exported. Review
+[the security model](docs/SECURITY.md) before enabling full clone.
+
+Full clone intentionally covers selected human login accounts. System/service
+accounts remain owned by their packages or application installers, so their
+numeric identities cannot silently collide between independently installed
+peers. Deleted users are still not removed automatically.
 
 ## Package reconciliation
 
@@ -59,10 +68,10 @@ Examples without environment-specific values:
 
 ```text
 sudo ./install.sh --role standby --active-address ACTIVE --vip VIP \
-  --active-known-hosts ./active_known_hosts --enable-sync
+  --active-known-hosts ./active_known_hosts --full-clone --enable-sync
 
 sudo ./install.sh --role active --vip VIP \
-  --standby-public-key ./standby_sync_ed25519.pub
+  --standby-public-key ./standby_sync_ed25519.pub --full-clone
 ```
 
 Use `--destdir` for package and CI validation. Installation is idempotent and
@@ -78,5 +87,5 @@ reviewed promotion. `jumpserver-ha` is the single replication authority; GR
 does not create a parallel HA transport.
 
 The login MOTD displays the role, last successful apply and the package-plan
-command. See the [standby runbook](docs/STANDBY-RUNBOOK.md) for validation and
-promotion.
+command, and states whether partial or full-clone policy is active. See the
+[standby runbook](docs/STANDBY-RUNBOOK.md) for validation and promotion.

@@ -34,6 +34,8 @@ differences are not forced automatically.
 2. Exclude split-brain and determine VIP ownership.
 3. Review `last-success`, the archive hash and both synchronization journals.
 4. Validate users, home ownership and the GR archive on standby.
+   In full-clone mode, validate local login and password aging with a designated
+   test account; never print `/etc/shadow` or private credential files.
 5. Review the package proposal; install only approved missing prerequisites.
 6. Move/promote the VIP according to the network runbook.
 7. Enable only approved GR timers after the standby is authoritative.
@@ -43,6 +45,9 @@ installation completed.
 
 ## Secrets and vault recovery
 
-If secret replication is approved, the encrypted store and private material may
-be present but GPG can still require an interactive unlock after reboot. Do not
-remove passphrase protection solely to make failover unattended.
+When full clone is approved, selected local password hashes, the encrypted
+store and private material are present on standby. The same local password can
+therefore authenticate when PAM uses `/etc/shadow`; external RADIUS/LDAP still
+depends on its own replicated configuration, packages and upstream service.
+GPG can still require an interactive unlock after reboot. Do not remove
+passphrase protection solely to make failover unattended.

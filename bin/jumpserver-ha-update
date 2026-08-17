@@ -58,7 +58,8 @@ else
     install_args+=(--sync-user "$account")
   done < /etc/jumpserver-ha/sync-users
 fi
-[[ "${JUMPSERVER_HA_SYNC_SECRETS:-false}" == true ]] && install_args+=(--sync-secrets)
+full_clone="${JUMPSERVER_HA_FULL_CLONE:-${JUMPSERVER_HA_SYNC_SECRETS:-false}}"
+[[ "$full_clone" == true ]] && install_args+=(--full-clone)
 calendar=$(awk -F= '$1 == "OnCalendar" {print substr($0, index($0, "=") + 1); exit}' \
   /etc/systemd/system/shadow-ha-sync.timer)
 [[ -n "$calendar" ]] && install_args+=(--sync-interval "$calendar")

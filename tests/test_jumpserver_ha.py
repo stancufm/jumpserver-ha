@@ -43,13 +43,14 @@ class PackagePlanTests(unittest.TestCase):
 
 
 class InstallerTests(unittest.TestCase):
-    def staged_install(self, role):
+    def staged_install(self, role, *extra):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         command = ["bash", "install.sh", "--role", role, "--vip", "192.0.2.100",
                    "--non-interactive", "--destdir", temporary.name]
         if role == "standby":
             command.extend(["--active-address", "192.0.2.10"])
+        command.extend(extra)
         subprocess.run(command, check=True, stdout=subprocess.PIPE,
                        stderr=subprocess.PIPE, universal_newlines=True)
         return pathlib.Path(temporary.name)
@@ -67,6 +68,14 @@ class InstallerTests(unittest.TestCase):
         service = (root / "etc/systemd/system/shadow-ha-sync.service").read_text(
             encoding="utf-8")
         self.assertIn("User=shadow-ha", service)
+
+    def test_full_clone_policy_is_explicit_and_persisted(self):
+        root = self.staged_install("standby", "--full-clone")
+        role = (root / "etc/jumpserver-ha/role.conf").read_text(encoding="utf-8")
+        self.assertIn("JUMPSERVER_HA_FULL_CLONE=true", role)
+        self.assertIn("JUMPSERVER_HA_SYNC_SECRETS=true", role)
+        self.assertEqual((root / "etc/jumpserver-ha/role.conf").stat().st_mode & 0o777,
+                         0o644)
 
     def test_updater_reinstalls_the_configured_role(self):
         updater = pathlib.Path("bin/jumpserver-ha-update").read_text(encoding="utf-8")
@@ -97,7 +106,7 @@ class ExportContractTests(unittest.TestCase):
             (approved / ".config/gr/credentials").write_text(
                 "must-not-export\n", encoding="utf-8")
             (config / "role.conf").write_text(
-                "JUMPSERVER_HA_ROLE=active\nJUMPSERVER_HA_SYNC_SECRETS=false\n",
+                "JUMPSERVER_HA_ROLE=active\nJUMPSERVER_HA_FULL_CLONE=false\n",
                 encoding="utf-8")
             (config / "sync-paths").write_text(str(approved) + "\n", encoding="utf-8")
             (config / "sync-users").write_text("", encoding="utf-8")
@@ -110,11 +119,14 @@ class ExportContractTests(unittest.TestCase):
             with tarfile.open(str(archive), "r:gz") as exported:
                 names = exported.getnames()
                 self.assertIn("metadata/users.tsv", names)
+                self.assertIn("metadata/shadow", names)
                 self.assertIn("metadata/packages.tsv", names)
                 expected = "rootfs" + str(approved).replace("\\", "/") + "/state.txt"
                 self.assertIn(expected.lstrip("/"), names)
                 self.assertFalse(any(name.endswith("/.config/gr/credentials")
                                      for name in names))
+                shadow = exported.extractfile("metadata/shadow").read()
+                self.assertEqual(shadow, b"")
 
 
 class StaticContractTests(unittest.TestCase):
@@ -122,6 +134,22 @@ class StaticContractTests(unittest.TestCase):
         motd = pathlib.Path("templates/motd-standby").read_text(encoding="utf-8")
         self.assertIn("users, home directories", motd)
         self.assertIn("shadow-ha-packages plan", motd)
+        self.assertIn("Full-clone mode", motd)
+
+    def test_full_clone_archive_contract_protects_local_authentication(self):
+        exporter = pathlib.Path("bin/shadow-ha-export").read_text(encoding="utf-8")
+        apply = pathlib.Path("bin/shadow-ha-apply").read_text(encoding="utf-8")
+        sync = pathlib.Path("bin/shadow-ha-sync").read_text(encoding="utf-8")
+        self.assertIn("format=shadow-ha-v3", exporter)
+        self.assertIn('chmod 0600 "$stage/metadata/shadow"', exporter)
+        self.assertIn("full_clone", exporter)
+        self.assertIn("metadata/shadow", sync)
+        self.assertIn("Full-clone shadow metadata does not match", apply)
+        self.assertIn("does not match the standby policy", apply)
+        self.assertIn("chpasswd --encrypted", apply)
+        self.assertIn('usermod --groups "$supplementary"', apply)
+        self.assertIn("rm -f -- \"$archive\"", apply)
+        self.assertNotIn("chpasswd --encrypted $", apply)
 
     def test_role_defaults_do_not_contain_real_environment_values(self):
         defaults = pathlib.Path(

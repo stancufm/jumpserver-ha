@@ -7,7 +7,7 @@ active_address=""
 ssh_port=22
 vip=""
 sync_interval='*-*-* *:0/5:00'
-sync_secrets=false
+full_clone=false
 sync_users_auto=true
 sync_users=()
 sync_paths=()
@@ -34,7 +34,8 @@ Replication:
   --sync-path PATH            approved shared path; repeatable
   --sync-user USER            explicit human account; repeatable
   --no-auto-users             disable automatic /home user discovery
-  --sync-secrets              include private SSH/GPG and encrypted vault state
+  --full-clone               clone local password state and complete user homes
+  --sync-secrets             compatibility alias for --full-clone
   --sync-interval CALENDAR    systemd calendar for passive pull
   --enable-sync               enable standby pull/apply units after installation
 
@@ -59,7 +60,8 @@ while (($#)); do
     --sync-path) sync_paths+=("${2:-}"); shift 2 ;;
     --sync-user) sync_users+=("${2:-}"); shift 2 ;;
     --no-auto-users) sync_users_auto=false; shift ;;
-    --sync-secrets) sync_secrets=true; shift ;;
+    --full-clone) full_clone=true; shift ;;
+    --sync-secrets) full_clone=true; shift ;;
     --standby-public-key) standby_public_key=${2:-}; shift 2 ;;
     --active-known-hosts) active_known_hosts=${2:-}; shift 2 ;;
     --enable-sync) enable_sync=true; shift ;;
@@ -101,6 +103,9 @@ if [[ "$role" == standby && -z "$active_address" && "$non_interactive" == false 
 fi
 if [[ "$role" == standby && "$non_interactive" == false && "$enable_sync" == false ]]; then
   prompt_boolean enable_sync 'Enable passive synchronization after installation and trust validation?'
+fi
+if [[ "$non_interactive" == false && "$full_clone" == false ]]; then
+  prompt_boolean full_clone 'Enable full clone of local password state and complete user homes?'
 fi
 if [[ ${#sync_paths[@]} -eq 0 ]]; then
   sync_paths=(/etc/gr /var/lib/gr/config-archive /var/lib/gr-collector)
@@ -178,9 +183,10 @@ JUMPSERVER_HA_ACTIVE_ADDRESS=$active_address
 JUMPSERVER_HA_SSH_PORT=$ssh_port
 JUMPSERVER_HA_VIP=$vip
 JUMPSERVER_HA_EXPORT_USER=shadow-export
-JUMPSERVER_HA_SYNC_SECRETS=$sync_secrets
+JUMPSERVER_HA_FULL_CLONE=$full_clone
+JUMPSERVER_HA_SYNC_SECRETS=$full_clone
 EOF
-chmod 0640 "$destdir/etc/jumpserver-ha/role.conf"
+chmod 0644 "$destdir/etc/jumpserver-ha/role.conf"
 printf '%s\n' "${sync_paths[@]}" > "$destdir/etc/jumpserver-ha/sync-paths"
 chmod 0640 "$destdir/etc/jumpserver-ha/sync-paths"
 if [[ "$sync_users_auto" == true ]]; then

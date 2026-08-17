@@ -23,7 +23,28 @@ stage=$(mktemp -d "${state_dir}/apply.XXXXXX")
 trap 'rm -rf -- "$stage"' EXIT
 tar --no-same-owner --acls --xattrs -xzf "$archive" -C "$stage"
 [[ -d "$stage/metadata" && -d "$stage/rootfs" ]] || { echo 'Incomplete staged archive.' >&2; exit 2; }
-grep -qxF 'format=shadow-ha-v2' "$stage/metadata/manifest" || { echo 'Unsupported archive format.' >&2; exit 2; }
+grep -qxF 'format=shadow-ha-v3' "$stage/metadata/manifest" || { echo 'Unsupported archive format.' >&2; exit 2; }
+full_clone=$(awk -F= '$1 == "full_clone" {print $2}' "$stage/metadata/manifest")
+[[ "$full_clone" == true || "$full_clone" == false ]] || { echo 'Invalid full-clone policy.' >&2; exit 2; }
+configured_full_clone="${JUMPSERVER_HA_FULL_CLONE:-${JUMPSERVER_HA_SYNC_SECRETS:-false}}"
+[[ "$configured_full_clone" == true || "$configured_full_clone" == false ]] || {
+  echo 'Invalid locally configured full-clone policy.' >&2; exit 2;
+}
+[[ "$full_clone" == "$configured_full_clone" ]] || {
+  echo 'Archive full-clone policy does not match the standby policy.' >&2; exit 2;
+}
+
+cut -f1 "$stage/metadata/users.tsv" | LC_ALL=C sort > "$stage/metadata/user-names"
+cut -d: -f1 "$stage/metadata/shadow" | LC_ALL=C sort > "$stage/metadata/shadow-names"
+if [[ "$full_clone" == true ]]; then
+  cmp -s "$stage/metadata/user-names" "$stage/metadata/shadow-names" || {
+    echo 'Full-clone shadow metadata does not match the selected accounts.' >&2
+    exit 2
+  }
+elif [[ -s "$stage/metadata/shadow" ]]; then
+  echo 'Partial replication archive unexpectedly contains password hashes.' >&2
+  exit 2
+fi
 
 while IFS=$'\t' read -r group_name group_gid; do
   [[ "$group_name" =~ ^[a-z_][a-z0-9_-]*[$]?$ && "$group_gid" =~ ^[0-9]+$ ]] || {
@@ -78,12 +99,35 @@ while IFS=$'\t' read -r user_name user_uid user_gid primary_group user_home user
     useradd --uid "$user_uid" --gid "$user_gid" --home-dir "$user_home" \
       --shell "$user_shell" --no-create-home --password '!' "$user_name"
   fi
-  if [[ -n "$supplementary" ]]; then
+  if [[ "$full_clone" == true ]]; then
+    usermod --groups "$supplementary" "$user_name"
+  elif [[ -n "$supplementary" ]]; then
     usermod --append --groups "$supplementary" "$user_name"
   fi
 done < "$stage/metadata/users.tsv"
 
-sync_secrets=$(awk -F= '$1 == "sync_secrets" {print $2}' "$stage/metadata/manifest")
+if [[ "$full_clone" == true ]]; then
+  while IFS=: read -r user_name password_hash last_change minimum maximum warning inactive expire reserved; do
+    [[ "$user_name" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] || {
+      echo 'Unsafe shadow account metadata.' >&2; exit 2;
+    }
+    [[ "$last_change" =~ ^-?[0-9]+$ ]] || {
+      echo "A numeric last-password-change value is required for $user_name" >&2; exit 2;
+    }
+    for value in "$last_change" "$minimum" "$maximum" "$warning" "$inactive" "$expire"; do
+      [[ -z "$value" || "$value" =~ ^-?[0-9]+$ ]] || {
+        echo "Unsafe password-aging metadata for $user_name" >&2; exit 2;
+      }
+    done
+    printf '%s:%s\n' "$user_name" "$password_hash" | chpasswd --encrypted
+    chage --mindays "${minimum:-0}" --maxdays "${maximum:--1}" \
+      --warndays "${warning:-0}" --inactive "${inactive:--1}" \
+      --expiredate "${expire:--1}" "$user_name"
+    [[ -z "$last_change" ]] || chage --lastday "$last_change" "$user_name"
+  done < "$stage/metadata/shadow"
+fi
+
+sync_secrets=$full_clone
 
 sync_one_path() {
   local path=$1
@@ -151,4 +195,5 @@ if command -v shadow-ha-packages >/dev/null 2>&1; then
   shadow-ha-packages plan --write >/dev/null
 fi
 logger -t shadow-ha-apply 'Passive users, homes and shared state synchronization completed.'
+rm -f -- "$archive"
 echo 'SYNC_APPLY_STATUS=success'

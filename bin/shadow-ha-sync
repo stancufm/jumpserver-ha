@@ -40,7 +40,7 @@ ssh -F /dev/null -i "$key_file" -p "$source_port" -o BatchMode=yes \
   -o PasswordAuthentication=no -o StrictHostKeyChecking=yes \
   -o UserKnownHostsFile="$known_hosts" "${source_user}@${source_host}" > "$incoming"
 tar -tzf "$incoming" > "$listing"
-for required in metadata/manifest metadata/users.tsv metadata/groups.tsv metadata/packages.tsv metadata/paths; do
+for required in metadata/manifest metadata/users.tsv metadata/groups.tsv metadata/shadow metadata/packages.tsv metadata/paths; do
   grep -qxF "$required" "$listing" || {
     echo "Missing required export member: $required" >&2
     exit 2
@@ -50,7 +50,7 @@ if grep -Eq '(^/|(^|/)\.\.(/|$))' "$listing"; then
   echo 'Unsafe archive member received.' >&2
   exit 2
 fi
-grep -qxF 'format=shadow-ha-v2' <(tar -xOzf "$incoming" metadata/manifest | head -n 1) || {
+grep -qxF 'format=shadow-ha-v3' <(tar -xOzf "$incoming" metadata/manifest | head -n 1) || {
   echo 'Unsupported HA archive format.' >&2
   exit 2
 }

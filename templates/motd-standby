@@ -7,6 +7,11 @@ config=/etc/jumpserver-ha/role.conf
 printf '\n*** JUMPSERVER HA: %s ***\n' "$(printf '%s' "${JUMPSERVER_HA_ROLE:-unknown}" | tr '[:lower:]' '[:upper:]')"
 if [ "${JUMPSERVER_HA_ROLE:-}" = standby ]; then
   echo 'Passive peer: users, home directories and approved operational state are pulled from the active node.'
+  if [ "${JUMPSERVER_HA_FULL_CLONE:-${JUMPSERVER_HA_SYNC_SECRETS:-false}}" = true ]; then
+    echo 'Full-clone mode: selected local password state and complete user homes are replicated.'
+  else
+    echo 'Partial mode: local password hashes and private credential material are not replicated.'
+  fi
   echo 'Installed packages are compared after synchronization; installation is proposal-only and requires an explicit administrator action.'
   if [ -r /var/lib/shadow-ha-sync/last-success ]; then
     printf 'Last successful apply: '
@@ -19,5 +24,8 @@ if [ "${JUMPSERVER_HA_ROLE:-}" = standby ]; then
 else
   echo 'Active peer: this is the only node permitted to run operational collection timers.'
   echo 'A restricted exporter supplies users, homes, package inventory and approved state to the standby.'
+  if [ "${JUMPSERVER_HA_FULL_CLONE:-${JUMPSERVER_HA_SYNC_SECRETS:-false}}" = true ]; then
+    echo 'Full-clone exports include selected local password state and complete user homes.'
+  fi
 fi
 echo 'Runbook: /etc/jumpserver-ha/README.md'

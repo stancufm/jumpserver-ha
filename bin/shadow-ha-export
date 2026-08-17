@@ -16,18 +16,24 @@ source "$role_file"
   echo 'HA exporter is available only on the active node.' >&2
   exit 2
 }
+readonly full_clone="${JUMPSERVER_HA_FULL_CLONE:-${JUMPSERVER_HA_SYNC_SECRETS:-false}}"
+[[ "$full_clone" == true || "$full_clone" == false ]] || {
+  echo 'JUMPSERVER_HA_FULL_CLONE must be true or false.' >&2
+  exit 2
+}
 
 stage=$(mktemp -d /tmp/shadow-ha-export.XXXXXX)
 trap 'rm -rf -- "$stage"' EXIT
 install -d -m 0700 "$stage/metadata" "$stage/rootfs"
 
-python3 - "$users_file" "$stage/metadata/users.tsv" "$stage/metadata/groups.tsv" <<'PY'
+python3 - "$users_file" "$stage/metadata/users.tsv" "$stage/metadata/groups.tsv" \
+  "$stage/metadata/shadow" "$full_clone" <<'PY'
 import grp
 import os
 import pwd
 import sys
 
-users_file, users_output, groups_output = sys.argv[1:]
+users_file, users_output, groups_output, shadow_output, full_clone = sys.argv[1:]
 with open(users_file, encoding="utf-8") as handle:
     requested = [line.strip() for line in handle if line.strip() and not line.lstrip().startswith("#")]
 
@@ -70,17 +76,33 @@ with open(groups_output, "w", encoding="utf-8", newline="\n") as handle:
     for name in sorted(needed_groups):
         group = group_entries[name]
         handle.write("{}\t{}\n".format(group.gr_name, group.gr_gid))
+
+selected_names = {entry.pw_name for entry in selected}
+shadow_rows = {}
+if full_clone == "true":
+    with open("/etc/shadow", encoding="utf-8") as handle:
+        for raw in handle:
+            fields = raw.rstrip("\n").split(":")
+            if len(fields) == 9 and fields[0] in selected_names:
+                shadow_rows[fields[0]] = fields
+    missing = selected_names.difference(shadow_rows)
+    if missing:
+        raise SystemExit("Missing shadow metadata for selected accounts")
+with open(shadow_output, "w", encoding="utf-8", newline="\n") as handle:
+    for name in sorted(shadow_rows):
+        handle.write(":".join(shadow_rows[name]) + "\n")
 PY
+chmod 0600 "$stage/metadata/shadow"
 
 dpkg-query -W -f='${binary:Package}\t${Version}\t${Status}\n' 2>/dev/null \
   | awk -F '\t' '$3 == "install ok installed" {print $1 "\t" $2}' \
   | LC_ALL=C sort > "$stage/metadata/packages.tsv"
 
 {
-  printf 'format=shadow-ha-v2\n'
+  printf 'format=shadow-ha-v3\n'
   printf 'created_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf 'source_hostname=%s\n' "$(hostname)"
-  printf 'sync_secrets=%s\n' "${JUMPSERVER_HA_SYNC_SECRETS:-false}"
+  printf 'full_clone=%s\n' "$full_clone"
 } > "$stage/metadata/manifest"
 
 copy_relative() {
@@ -95,7 +117,7 @@ copy_relative() {
   }
   [[ ! -L "$source" ]] || { echo "Synchronized path may not be a symlink: $source" >&2; exit 2; }
   local rsync_args=(-aHAX --numeric-ids --relative --exclude='.collect.lock')
-  if [[ "${JUMPSERVER_HA_SYNC_SECRETS:-false}" != true ]]; then
+  if [[ "$full_clone" != true ]]; then
     rsync_args+=(--exclude='.password-store/' --exclude='.gnupg/private-keys-v1.d/'
       --exclude='.ssh/id_*' --exclude='.ssh/*.pem' --exclude='.ssh/*.key'
       --exclude='.config/gr/credentials' --exclude='.local/state/gr/audit/')
@@ -118,7 +140,7 @@ while IFS=$'\t' read -r name uid gid primary home shell supplementary; do
   }
   [[ ! -L "$home" ]] || { echo "Home directory may not be a symlink: $home" >&2; exit 2; }
   rsync_args=(-aHAX --numeric-ids --relative)
-  if [[ "${JUMPSERVER_HA_SYNC_SECRETS:-false}" != true ]]; then
+  if [[ "$full_clone" != true ]]; then
     rsync_args+=(--exclude='.password-store/' --exclude='.gnupg/private-keys-v1.d/'
       --exclude='.ssh/id_*' --exclude='.ssh/*.pem' --exclude='.ssh/*.key'
       --exclude='.config/gr/credentials' --exclude='.local/state/gr/audit/')

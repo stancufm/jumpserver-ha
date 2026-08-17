@@ -105,14 +105,15 @@
     dest: /etc/jumpserver-ha/role.conf
     owner: root
     group: '{{ jumpserver_ha_service_user }}'
-    mode: '0640'
+    mode: '0644'
     content: |
       JUMPSERVER_HA_ROLE={{ jumpserver_ha_role }}
       JUMPSERVER_HA_ACTIVE_ADDRESS={{ jumpserver_ha_active_address }}
       JUMPSERVER_HA_SSH_PORT={{ jumpserver_ha_ssh_port }}
       JUMPSERVER_HA_VIP={{ jumpserver_ha_vip }}
       JUMPSERVER_HA_EXPORT_USER={{ jumpserver_ha_export_user }}
-      JUMPSERVER_HA_SYNC_SECRETS={{ jumpserver_ha_sync_secrets | bool | lower }}
+      JUMPSERVER_HA_FULL_CLONE={{ ((jumpserver_ha_full_clone | bool) or (jumpserver_ha_sync_secrets | bool)) | lower }}
+      JUMPSERVER_HA_SYNC_SECRETS={{ ((jumpserver_ha_full_clone | bool) or (jumpserver_ha_sync_secrets | bool)) | lower }}
 
 - name: Write synchronized path allow-list
   ansible.builtin.copy:
