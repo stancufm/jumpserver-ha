@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import importlib.machinery
+import importlib.util
 import json
 import os
 import pathlib
@@ -10,8 +11,11 @@ import tempfile
 import unittest
 
 
-PACKAGES = importlib.machinery.SourceFileLoader(
-    "shadow_ha_packages", "bin/shadow-ha-packages").load_module()
+loader = importlib.machinery.SourceFileLoader(
+    "shadow_ha_packages", "bin/shadow-ha-packages")
+spec = importlib.util.spec_from_loader(loader.name, loader)
+PACKAGES = importlib.util.module_from_spec(spec)
+loader.exec_module(PACKAGES)
 
 
 class PackagePlanTests(unittest.TestCase):
