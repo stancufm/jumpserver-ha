@@ -1,38 +1,66 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly config='/etc/jumpserver-ha/role.conf'
-[[ -r "$config" ]] || { echo "Missing $config" >&2; exit 1; }
+readonly config="${SHADOW_HA_ROLE_FILE:-/etc/jumpserver-ha/role.conf}"
+[[ -r "$config" ]] || { echo "Missing $config" >&2; exit 2; }
 # shellcheck disable=SC1090
 source "$config"
-readonly source_host="$JUMPSERVER_HA_ACTIVE_ADDRESS"
-readonly source_port="$JUMPSERVER_HA_SSH_PORT"
-readonly vip="$JUMPSERVER_HA_VIP"
-readonly source_user='shadow-export'
-readonly state_dir='/var/lib/shadow-ha-sync'
-readonly key_file='/etc/shadow-ha/keys/sync_ed25519'
-readonly known_hosts='/etc/shadow-ha/master_known_hosts'
 
-install -d -o root -g root -m 0750 "$state_dir"
-exec 9>"${state_dir}/sync.lock"
-flock -n 9 || exit 0
+[[ "${JUMPSERVER_HA_ROLE:-}" == standby ]] || {
+  echo 'Passive synchronization runs only on the standby node.' >&2
+  exit 2
+}
+readonly source_host="${JUMPSERVER_HA_ACTIVE_ADDRESS:?missing active address}"
+readonly source_port="${JUMPSERVER_HA_SSH_PORT:?missing SSH port}"
+readonly vip="${JUMPSERVER_HA_VIP:?missing VIP}"
+readonly source_user="${JUMPSERVER_HA_EXPORT_USER:-shadow-export}"
+readonly state_dir="${SHADOW_HA_STATE_DIR:-/var/lib/shadow-ha-sync}"
+readonly key_file="${SHADOW_HA_KEY_FILE:-/etc/jumpserver-ha/keys/sync_ed25519}"
+readonly known_hosts="${SHADOW_HA_KNOWN_HOSTS:-/etc/jumpserver-ha/active_known_hosts}"
+
+install -d -m 0700 "$state_dir"
+exec 9>"${state_dir}/fetch.lock"
+flock -n 9 || { echo 'SYNC_STATUS=busy'; exit 0; }
+
 if ip -4 -o addr show | grep -qF "${vip}/32"; then
+  echo 'SYNC_STATUS=skipped reason=vip_present'
   logger -t shadow-ha-sync 'VIP is present locally; passive synchronization skipped.'
   exit 0
 fi
-[[ -r "$key_file" && -r "$known_hosts" ]] || { echo 'Missing sync key or known_hosts pin.' >&2; exit 1; }
+[[ -r "$key_file" && -r "$known_hosts" ]] || {
+  echo 'Missing synchronization key or active host-key pin.' >&2
+  exit 2
+}
 
-archive="$(mktemp "${state_dir}/incoming.XXXXXX.tar.gz")"
-listing="$(mktemp "${state_dir}/listing.XXXXXX")"
-trap 'rm -f "$archive" "$listing"' EXIT
-ssh -F /dev/null -i "$key_file" -p "$source_port" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known_hosts" "${source_user}@${source_host}" > "$archive"
-tar -tzf "$archive" > "$listing"
-for required in usr/local/bin/gr etc/gr/config.json home/mihai.stancu/.config/gr/config.json home/mihai.stancu/.password-store/.gpg-id; do
-  grep -qxF "$required" "$listing" || { echo "Missing required export path: $required" >&2; exit 1; }
+incoming=$(mktemp "${state_dir}/incoming.XXXXXX.tar.gz")
+listing=$(mktemp "${state_dir}/listing.XXXXXX")
+trap 'rm -f -- "$incoming" "$listing"' EXIT
+
+ssh -F /dev/null -i "$key_file" -p "$source_port" -o BatchMode=yes \
+  -o PasswordAuthentication=no -o StrictHostKeyChecking=yes \
+  -o UserKnownHostsFile="$known_hosts" "${source_user}@${source_host}" > "$incoming"
+tar -tzf "$incoming" > "$listing"
+for required in metadata/manifest metadata/users.tsv metadata/groups.tsv metadata/shadow metadata/packages.tsv metadata/paths; do
+  grep -qxF "$required" "$listing" || {
+    echo "Missing required export member: $required" >&2
+    exit 2
+  }
 done
-tar -xzf "$archive" -C / --numeric-owner
-systemctl daemon-reload
-systemctl disable --now gr-vendor-update.timer 2>/dev/null || true
-sha256sum "$archive" | awk '{print $1}' > "${state_dir}/last-archive.sha256"
-printf '%s source=%s\n' "$(date --iso-8601=seconds)" "$source_host" > "${state_dir}/last-success"
-logger -t shadow-ha-sync 'Passive configuration and user-data synchronization completed successfully.'
+if grep -Eq '(^/|(^|/)\.\.(/|$))' "$listing"; then
+  echo 'Unsafe archive member received.' >&2
+  exit 2
+fi
+grep -qxF 'format=shadow-ha-v3' <(tar -xOzf "$incoming" metadata/manifest | head -n 1) || {
+  echo 'Unsupported HA archive format.' >&2
+  exit 2
+}
+
+chmod 0600 "$incoming"
+mv -f -- "$incoming" "${state_dir}/incoming.tar.gz"
+ready_tmp=$(mktemp "${state_dir}/ready.XXXXXX")
+printf '%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$ready_tmp"
+chmod 0600 "$ready_tmp"
+mv -f -- "$ready_tmp" "${state_dir}/incoming.ready"
+trap - EXIT
+rm -f -- "$listing"
+echo 'SYNC_FETCH_STATUS=success apply=pending'

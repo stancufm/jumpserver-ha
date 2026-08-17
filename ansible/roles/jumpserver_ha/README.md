@@ -9,10 +9,18 @@ Required out-of-band material:
 - the matching private key installed root-only on the standby host;
 - `jumpserver_ha_active_known_host` pinned on the standby host.
 
-Use `jumpserver_ha_sync_paths` only for shared operational state. The default
-list is intentionally empty; each environment must opt in. Typical entries are
-GR configuration, a user's encrypted password store/GPG/SSH material, GR audit
-state, and `/var/lib/gr/config-archive`.
+`jumpserver_ha_sync_paths` is an explicit allow-list for shared operational
+state. Human users are discovered independently from `/etc/passwd`, or selected
+with `jumpserver_ha_sync_users`. Existing conflicting UID/GID mappings stop the
+apply before a home directory is changed.
 
-Scheduled collection units belong to the active node. The standby receives their
-files but disables their timers.
+Local password hashes, private SSH/GPG keys and encrypted vault directories are
+excluded unless `jumpserver_ha_full_clone` is explicitly enabled. Full clone
+also mirrors the complete homes of the selected human accounts. The deprecated
+`jumpserver_ha_sync_secrets` variable enables the same policy for compatibility.
+Package differences are written as a proposal; the role never invokes package
+installation.
+
+GR owns and installs its scheduled-collection units. This role does not replace
+them; it keeps `gr-config-collect.timer` disabled on standby and maintains the
+active marker used by GR for fencing.

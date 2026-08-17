@@ -1,64 +1,91 @@
 # jumpserver-ha
 
-Reusable, pull-based active/standby jump-server replication for Debian hosts.
+Reusable, pull-based active/standby replication for Debian jump servers.
 
-The active node is the sole source of operational automation.  The standby node
-pulls a fixed, root-readable export every five minutes through a restricted SSH
-account, but never starts collection jobs by itself.
+The standby fetches a fixed export with its own unprivileged `shadow-ha`
+account. A separate local root helper applies only a validated archive. The
+active accepts the standby key through the restricted `shadow-export` account
+and one forced exporter command; no general remote shell or broad sudo rule is
+granted.
 
-## What this project installs
+## Replicated state
 
-- a narrow exporter on the active node;
-- a root-owned sync key, pinned host key and pull service/timer on the standby;
-- a role-aware MOTD/login warning and an operational runbook;
-- optional replication of the GR configuration archive;
-- unit files for scheduled jobs on both nodes, enabled only on the active node;
-- a standby installer and a safe update checker for the installed project.
+Each successful export contains:
 
-The role always installs the unit files and calls `systemctl daemon-reload`.
-Installation alone does **not** enable an operational timer: this protects a
-newly built standby and prevents an upgrade from unexpectedly starting network
-collection. A separate explicit activation step enables timers only on the
-active peer.
+- explicitly allow-listed operational paths;
+- selected human account metadata (UID, GID, home, shell and group membership);
+- their home directories, preserving numeric ownership, ACLs and xattrs;
+- a Debian package manifest used only to produce a standby proposal.
 
-Secrets are replicated only when `jumpserver_ha_sync_secrets: true` is explicitly
-set.  Do not put private keys, passphrases or credentials in Git; provision the
-standby's private key and the active node's authorized public key out of band.
+Automatic user discovery selects normal `/home` accounts with UID 1000-59999.
+Service users and non-login accounts are excluded. Existing conflicting names,
+UIDs or GIDs stop the apply before home data is changed. Accounts and files are
+never deleted merely because they disappeared from the active account list.
 
-## Design constraints
+Partial mode is the reusable default: password hashes, private SSH/GPG keys,
+API credential files, password-store content and GR SSH audits are excluded.
+`--full-clone` changes the contract for a designated clone such as
+`shadow-m`/`shadow-s`: it copies each selected account's local `/etc/shadow`
+hash, lock state and aging fields, then mirrors its complete home directory.
+The legacy `--sync-secrets` option is accepted as an alias. No plaintext
+password or GPG passphrase is exported. Review
+[the security model](docs/SECURITY.md) before enabling full clone.
 
-The role deliberately does not copy host identity, network configuration,
-VRRP/keepalived state, machine-id, or SSH host keys.  Each peer must retain its
-own address and identity.  It synchronizes designated shared operational state
-instead.  The active export command is fixed in sudoers; it is not a general
-passwordless-root account.
+Full clone intentionally covers selected human login accounts. System/service
+accounts remain owned by their packages or application installers, so their
+numeric identities cannot silently collide between independently installed
+peers. Deleted users are still not removed automatically.
 
-See [the Romanian runbook](README.ro.md), [security model](docs/SECURITY.md),
-and [the Ansible role](ansible/roles/jumpserver_ha/README.md).
+## Package reconciliation
 
-## Standby installation and updates
+Synchronization records the active package set and writes a proposal on the
+standby:
 
-The repository includes a non-interactive installer for the passive peer. It
-preserves its existing root-only sync key and pinned active-host key; those
-secrets are deliberately provisioned outside Git.
-
-```bash
-sudo install -d -o root -g root -m 0755 /opt/jumpserver-ha
-sudo wget -qO- https://github.com/stancufm/jumpserver-ha/archive/refs/heads/main.tar.gz \
-  | sudo tar -xz --strip-components=1 -C /opt/jumpserver-ha
-cd /opt/jumpserver-ha
-sudo ./install.sh --role standby --active-address ACTIVE_PHYSICAL_IP --ssh-port 42202 --vip FLOATING_VIP
+```text
+sudo shadow-ha-packages plan
 ```
 
-The installer enables a daily `jumpserver-ha-update.timer` that only checks for
-new releases and logs their availability. It never auto-applies a change. It
-uses HTTPS + `wget`, so it does not require a Git client on an older standby.
-Apply after review with `sudo jumpserver-ha-update --apply`.
+No synchronization, timer, installer or Ansible run installs packages from
+that proposal. Installation of missing package names requires a separate,
+reviewed action:
 
-## Release discipline
+```text
+sudo shadow-ha-packages apply --yes --update
+```
 
-The passive updater compares the repository's `VERSION` file. Increment that
-file for every change intended for deployment, commit it to `main`, and let the
-standby timer report the new version. Changes without a `VERSION` increment are
-documentation/source work only and are intentionally not picked up by the
-installed node.
+Version differences and extra standby packages remain report-only. Packages
+are never automatically downgraded or removed.
+
+## New-server installation
+
+Run `install.sh` without `--non-interactive` for a guided setup. It asks for the
+node role, physical active address, SSH port, floating/VIP address, pinned trust
+material and optional synchronization choices. A standby generates its own
+Ed25519 synchronization key and prints the public key that must be authorized on
+the active node.
+
+Examples without environment-specific values:
+
+```text
+sudo ./install.sh --role standby --active-address ACTIVE --vip VIP \
+  --active-known-hosts ./active_known_hosts --full-clone --enable-sync
+
+sudo ./install.sh --role active --vip VIP \
+  --standby-public-key ./standby_sync_ed25519.pub --full-clone
+```
+
+Use `--destdir` for package and CI validation. Installation is idempotent and
+preserves an existing standby private key. Missing Debian dependencies are
+reported; installation requires `--install-dependencies`.
+
+## GR integration and node roles
+
+The active node alone runs GR collectors. `/var/lib/gr/config-archive`,
+`/etc/gr` and the dedicated collector state may be added to the HA allow-list.
+The standby pulls them but keeps every GR operational timer disabled until a
+reviewed promotion. `jumpserver-ha` is the single replication authority; GR
+does not create a parallel HA transport.
+
+The login MOTD displays the role, last successful apply and the package-plan
+command, and states whether partial or full-clone policy is active. See the
+[standby runbook](docs/STANDBY-RUNBOOK.md) for validation and promotion.

@@ -1,0 +1,12 @@
+[Unit]
+Description=Apply a validated jumpserver HA archive locally
+After=shadow-ha-sync.service
+ConditionPathExists=/var/lib/shadow-ha-sync/incoming.ready
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/shadow-ha-apply
+PrivateTmp=true
+ProtectSystem=false
+NoNewPrivileges=false
+TimeoutStartSec=30m

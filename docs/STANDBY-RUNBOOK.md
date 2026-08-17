@@ -1,51 +1,53 @@
 # Standby jumpserver runbook
 
-This node is the passive/DR peer. It pulls a fixed export from the active node
-every five minutes. It never starts GR collection or other operational timers
-as a consequence of synchronization or software installation.
+This node passively pulls approved state from the active peer. It never starts
+GR collection or installs package proposals as a consequence of synchronization.
 
 ## Normal validation
 
-```bash
-systemctl status shadow-ha-sync.timer jumpserver-ha-update.timer
+```text
+systemctl status shadow-ha-sync.timer shadow-ha-apply.path
 cat /var/lib/shadow-ha-sync/last-success
-sudo journalctl -u shadow-ha-sync --no-pager -n 100
-sudo jumpserver-ha-update --check
+sudo shadow-ha-packages plan
+sudo journalctl -u shadow-ha-sync -u shadow-ha-apply --no-pager -n 100
 ```
 
-`jumpserver-ha-update.timer` is a daily **check only**. It downloads the public
-HTTPS source archive with `wget`, compares the local and remote `VERSION`,
-records that result in `/var/lib/jumpserver-ha/last-update-check`, and logs if
-an update is available. It never changes the installed checkout.
+The MOTD shows the HA role and last successful apply. A missing or stale value
+is an operational alert. Validate that the active physical address, pinned host
+key and VIP in `/etc/jumpserver-ha/role.conf` are still correct.
 
-After reviewing the release, apply it explicitly:
+## Package proposal
 
-```bash
-sudo jumpserver-ha-update --apply
+Review missing, different and extra packages. Synchronization never changes the
+installed set. If missing packages are approved:
+
+```text
+sudo shadow-ha-packages apply --yes --update
 ```
 
-The updater stages the archive under `/opt`, retains the prior tree as
-`/opt/jumpserver-ha.previous`, and re-runs the idempotent installer. If that
-installer fails, it restores the previous tree. It preserves the existing
-restricted SSH key and host-key pin; it does not create, copy, or print secrets.
-Only commits that increment the repository `VERSION` are eligible for
-installation.
+Review services started by package maintainer scripts afterwards. Version
+differences are not forced automatically.
 
-## Incident/promotion
+## Incident and promotion
 
-1. Confirm that the active peer is unavailable and determine VRRP/VIP ownership.
-2. Review `last-success` and the synchronization journal.
-3. Use GR and its replicated operational data for diagnosis.
-4. Do not enable operational timers until split-brain has been excluded.
-5. If the promotion becomes permanent, enable only approved timers explicitly.
+1. Confirm the active peer is unavailable.
+2. Exclude split-brain and determine VIP ownership.
+3. Review `last-success`, the archive hash and both synchronization journals.
+4. Validate users, home ownership and the GR archive on standby.
+   In full-clone mode, validate local login and password aging with a designated
+   test account; never print `/etc/shadow` or private credential files.
+5. Review the package proposal; install only approved missing prerequisites.
+6. Move/promote the VIP according to the network runbook.
+7. Enable only approved GR timers after the standby is authoritative.
 
-## Vault/GPG recovery
+Do not enable operational timers merely because synchronization or package
+installation completed.
 
-The encrypted GR vault and private GPG material are replicated. After a fresh
-boot/login, GPG may require one interactive unlock:
+## Secrets and vault recovery
 
-```bash
-sudo -u mihai.stancu /usr/local/bin/gr vault test mihai.stancu
-```
-
-A fully unattended unlock needs a separate approved security design.
+When full clone is approved, selected local password hashes, the encrypted
+store and private material are present on standby. The same local password can
+therefore authenticate when PAM uses `/etc/shadow`; external RADIUS/LDAP still
+depends on its own replicated configuration, packages and upstream service.
+GPG can still require an interactive unlock after reboot. Do not remove
+passphrase protection solely to make failover unattended.
