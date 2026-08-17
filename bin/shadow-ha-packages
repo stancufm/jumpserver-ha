@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Compare active/standby Debian packages and apply only an explicit proposal."""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+STATE_DIR = os.environ.get("SHADOW_HA_STATE_DIR", "/var/lib/shadow-ha-sync")
+SOURCE_FILE = os.environ.get(
+    "SHADOW_HA_PACKAGES_FILE", os.path.join(STATE_DIR, "packages-active.tsv"))
+PLAN_JSON = os.environ.get(
+    "SHADOW_HA_PACKAGE_PLAN", os.path.join(STATE_DIR, "package-plan.json"))
+PLAN_TEXT = os.environ.get(
+    "SHADOW_HA_PACKAGE_PLAN_TEXT", os.path.join(STATE_DIR, "package-plan.txt"))
+
+
+class PackageError(RuntimeError):
+    pass
+
+
+PACKAGE_NAME = re.compile(r"^[a-z0-9][a-z0-9+.-]*(?::[a-z0-9]+)?$")
+
+
+def read_manifest(path):
+    packages = {}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for number, raw in enumerate(handle, 1):
+                line = raw.rstrip("\n")
+                if not line:
+                    continue
+                fields = line.split("\t")
+                if (len(fields) != 2 or not PACKAGE_NAME.match(fields[0])
+                        or not fields[1]):
+                    raise PackageError("Invalid package manifest line {}".format(number))
+                packages[fields[0]] = fields[1]
+    except OSError as exc:
+        raise PackageError("Cannot read active package manifest: {}".format(exc))
+    return packages
+
+
+def installed_packages():
+    command = ["dpkg-query", "-W", "-f=${binary:Package}\\t${Version}\\t${Status}\\n"]
+    try:
+        output = subprocess.check_output(command, universal_newlines=True,
+                                         stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PackageError("Cannot query installed packages: {}".format(exc))
+    result = {}
+    for line in output.splitlines():
+        fields = line.split("\t")
+        if len(fields) == 3 and fields[2] == "install ok installed":
+            result[fields[0]] = fields[1]
+    return result
+
+
+def build_plan(source, installed):
+    missing = sorted(name for name in source if name not in installed)
+    different = sorted((
+        {"package": name, "active": source[name], "standby": installed[name]}
+        for name in source if name in installed and source[name] != installed[name]),
+        key=lambda row: row["package"])
+    extra = sorted(name for name in installed if name not in source)
+    return {"missing": missing, "different_versions": different, "extra": extra}
+
+
+def render(plan):
+    lines = [
+        "PACKAGE_PLAN missing={} different_versions={} extra={}".format(
+            len(plan["missing"]), len(plan["different_versions"]), len(plan["extra"]))
+    ]
+    lines.extend("MISSING {}".format(name) for name in plan["missing"])
+    lines.extend("VERSION {} active={} standby={}".format(
+        row["package"], row["active"], row["standby"])
+        for row in plan["different_versions"])
+    lines.extend("EXTRA {}".format(name) for name in plan["extra"])
+    return "\n".join(lines) + "\n"
+
+
+def atomic_write(path, content, mode=0o644):
+    directory = os.path.dirname(path)
+    os.makedirs(directory, mode=0o750, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=".shadow-ha-", dir=directory)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def command_plan(write=False):
+    plan = build_plan(read_manifest(SOURCE_FILE), installed_packages())
+    text = render(plan)
+    if write:
+        atomic_write(PLAN_JSON, json.dumps(plan, indent=2, sort_keys=True) + "\n")
+        atomic_write(PLAN_TEXT, text)
+    sys.stdout.write(text)
+    return plan
+
+
+def command_apply(yes=False, update=False):
+    if os.geteuid() != 0:
+        raise PackageError("Package installation must run as root")
+    if not yes:
+        raise PackageError("Refusing package installation without --yes")
+    plan = command_plan(write=True)
+    missing = plan["missing"]
+    if not missing:
+        print("PACKAGE_APPLY_STATUS=unchanged")
+        return 0
+    if update:
+        subprocess.run(["apt-get", "update"], check=True)
+    # Exact active versions are reported but never forced: a version may not be
+    # available in the standby repositories, and automatic downgrade is unsafe.
+    subprocess.run(["apt-get", "install", "-y", "--no-install-recommends"] + missing,
+                   check=True, env=dict(os.environ, DEBIAN_FRONTEND="noninteractive"))
+    command_plan(write=True)
+    print("PACKAGE_APPLY_STATUS=success installed={}".format(len(missing)))
+    return 0
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="action", required=True)
+    plan = sub.add_parser("plan", help="compare packages without modifying the system")
+    plan.add_argument("--write", action="store_true", help="write the proposal under the HA state directory")
+    apply = sub.add_parser("apply", help="install missing packages from the latest active manifest")
+    apply.add_argument("--yes", action="store_true", help="confirm package installation")
+    apply.add_argument("--update", action="store_true", help="run apt-get update before installation")
+    return parser
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    try:
+        if args.action == "plan":
+            command_plan(args.write)
+            return 0
+        return command_apply(args.yes, args.update)
+    except (PackageError, subprocess.CalledProcessError) as exc:
+        print("shadow-ha-packages: error: {}".format(exc), file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -18,7 +18,8 @@ flock -n 9 || exit 0
 
 archive="$(mktemp "${state_dir}/update.XXXXXX.tar.gz")"
 extract_dir="$(mktemp -d "${state_dir}/update.XXXXXX")"
-trap 'rm -f "$archive"; rm -rf "$extract_dir"' EXIT
+trust_file=
+trap 'rm -f "$archive" ${trust_file:+"$trust_file"}; rm -rf "$extract_dir"' EXIT
 wget -q -O "$archive" "$archive_url"
 tar -xzf "$archive" -C "$extract_dir"
 candidate_dir="$(find "$extract_dir" -mindepth 1 -maxdepth 1 -type d -name 'jumpserver-ha-*' -print -quit)"
@@ -38,6 +39,42 @@ fi
 [[ -r /etc/jumpserver-ha/role.conf ]] || { echo 'Missing installed role configuration.' >&2; exit 1; }
 # shellcheck disable=SC1091
 source /etc/jumpserver-ha/role.conf
+[[ "${JUMPSERVER_HA_ROLE:-}" == active || "${JUMPSERVER_HA_ROLE:-}" == standby ]] || {
+  echo 'Installed HA role is invalid.' >&2; exit 1;
+}
+
+install_args=(--role "$JUMPSERVER_HA_ROLE" --vip "$JUMPSERVER_HA_VIP"
+  --ssh-port "$JUMPSERVER_HA_SSH_PORT" --non-interactive)
+while IFS= read -r path; do
+  [[ -n "$path" && "$path" != \#* ]] || continue
+  install_args+=(--sync-path "$path")
+done < /etc/jumpserver-ha/sync-paths
+if grep -qxF auto /etc/jumpserver-ha/sync-users; then
+  :
+else
+  install_args+=(--no-auto-users)
+  while IFS= read -r account; do
+    [[ -n "$account" && "$account" != \#* ]] || continue
+    install_args+=(--sync-user "$account")
+  done < /etc/jumpserver-ha/sync-users
+fi
+[[ "${JUMPSERVER_HA_SYNC_SECRETS:-false}" == true ]] && install_args+=(--sync-secrets)
+calendar=$(awk -F= '$1 == "OnCalendar" {print substr($0, index($0, "=") + 1); exit}' \
+  /etc/systemd/system/shadow-ha-sync.timer)
+[[ -n "$calendar" ]] && install_args+=(--sync-interval "$calendar")
+
+trust_file=$(mktemp "${state_dir}/trust.XXXXXX")
+if [[ "$JUMPSERVER_HA_ROLE" == standby ]]; then
+  install_args+=(--active-address "$JUMPSERVER_HA_ACTIVE_ADDRESS"
+    --active-known-hosts /etc/jumpserver-ha/active_known_hosts)
+  systemctl is-enabled --quiet shadow-ha-sync.timer 2>/dev/null && install_args+=(--enable-sync)
+else
+  awk 'NF >= 3 {for (field = 1; field <= NF; field++) if ($field ~ /^ssh-(ed25519|rsa)$/) {print $field " " $(field + 1); exit}}' \
+    /var/lib/shadow-export/.ssh/authorized_keys > "$trust_file"
+  [[ -s "$trust_file" ]] || { echo 'Cannot recover the authorized standby public key.' >&2; exit 1; }
+  install_args+=(--standby-public-key "$trust_file")
+fi
+
 staging="/opt/.jumpserver-ha.staging.$$"
 backup="/opt/jumpserver-ha.previous"
 rm -rf "$staging"
@@ -45,10 +82,14 @@ cp -a "$candidate_dir" "$staging"
 rm -rf "$backup"
 mv "$project_dir" "$backup"
 mv "$staging" "$project_dir"
-if ! /bin/bash "$project_dir/install.sh" --role standby --active-address "$JUMPSERVER_HA_ACTIVE_ADDRESS" --ssh-port "$JUMPSERVER_HA_SSH_PORT" --vip "$JUMPSERVER_HA_VIP" --upgrade; then
+if ! /bin/bash "$project_dir/install.sh" "${install_args[@]}"; then
   rm -rf "$project_dir"
   mv "$backup" "$project_dir"
-  echo 'Installation failed; restored the previous project directory.' >&2
+  if ! /bin/bash "$project_dir/install.sh" "${install_args[@]}"; then
+    echo 'Installation and automatic rollback both failed; follow the runbook.' >&2
+    exit 1
+  fi
+  echo 'Installation failed; reinstalled the previous release.' >&2
   exit 1
 fi
 logger -t "$log_tag" "Updated and reinstalled $local_version -> $remote_version."

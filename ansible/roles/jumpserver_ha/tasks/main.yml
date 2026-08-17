@@ -1,56 +1,246 @@
 ---
-- name: Validate the selected HA role
+- name: Validate the HA contract
   ansible.builtin.assert:
-    that: jumpserver_ha_role in ['active', 'standby']
+    that:
+      - jumpserver_ha_role in ['active', 'standby']
+      - jumpserver_ha_vip | default('') | length > 0
+      - jumpserver_ha_role != 'standby' or jumpserver_ha_active_address | length > 0
+      - jumpserver_ha_role != 'standby' or jumpserver_ha_active_known_host | length > 0
+      - jumpserver_ha_role != 'standby' or jumpserver_ha_sync_private_key_path | length > 0
+      - jumpserver_ha_role != 'active' or jumpserver_ha_standby_sync_public_key | length > 0
+      - jumpserver_ha_sync_paths | length > 0
+      - not jumpserver_ha_enable_sync or jumpserver_ha_role == 'standby'
 
-- name: Create HA state directories
+- name: Install HA runtime packages
+  ansible.builtin.apt:
+    name:
+      - bash
+      - openssh-client
+      - rsync
+      - tar
+      - gzip
+      - python3
+      - systemd
+      - iproute2
+      - util-linux
+    state: present
+    update_cache: false
+
+- name: Install active exporter prerequisites
+  ansible.builtin.apt:
+    name:
+      - openssh-server
+      - sudo
+    state: present
+    update_cache: false
+  when: jumpserver_ha_role == 'active'
+
+- name: Create the HA service group
+  ansible.builtin.group:
+    name: '{{ jumpserver_ha_service_user }}'
+    system: true
+
+- name: Create the unprivileged HA fetch user
+  ansible.builtin.user:
+    name: '{{ jumpserver_ha_service_user }}'
+    group: '{{ jumpserver_ha_service_user }}'
+    home: /var/lib/shadow-ha
+    shell: /usr/sbin/nologin
+    system: true
+    create_home: true
+
+- name: Create HA directories
   ansible.builtin.file:
-    path: '{{ item }}'
+    path: '{{ item.path }}'
     state: directory
+    owner: '{{ item.owner }}'
+    group: '{{ item.group }}'
+    mode: '{{ item.mode }}'
+  loop:
+    - {path: /etc/jumpserver-ha, owner: root, group: '{{ jumpserver_ha_service_user }}', mode: '0750'}
+    - {path: /etc/jumpserver-ha/keys, owner: root, group: '{{ jumpserver_ha_service_user }}', mode: '0750'}
+    - {path: /var/lib/shadow-ha, owner: '{{ jumpserver_ha_service_user }}', group: '{{ jumpserver_ha_service_user }}', mode: '0700'}
+    - {path: /var/lib/shadow-ha-sync, owner: '{{ jumpserver_ha_service_user }}', group: '{{ jumpserver_ha_service_user }}', mode: '0700'}
+    - {path: /usr/local/libexec/shadow-ha, owner: root, group: root, mode: '0755'}
+
+- name: Install HA executables
+  ansible.builtin.copy:
+    src: '{{ role_path }}/../../../bin/{{ item.source }}'
+    dest: '{{ item.destination }}'
     owner: root
     group: root
-    mode: '0750'
+    mode: '0755'
   loop:
-    - /etc/jumpserver-ha
-    - /etc/jumpserver-ha/keys
-    - /var/lib/jumpserver-ha
+    - {source: shadow-ha-sync, destination: /usr/local/sbin/shadow-ha-sync}
+    - {source: shadow-ha-apply, destination: /usr/local/sbin/shadow-ha-apply}
+    - {source: shadow-ha-packages, destination: /usr/local/sbin/shadow-ha-packages}
+    - {source: shadow-ha-export, destination: /usr/local/libexec/shadow-ha/export}
+    - {source: jumpserver-ha-update, destination: /usr/local/sbin/jumpserver-ha-update}
 
-- name: Install the role-aware login warning
-  ansible.builtin.template:
-    src: motd.j2
-    dest: /etc/motd
+- name: Install HA systemd units
+  ansible.builtin.copy:
+    src: '{{ role_path }}/../../../systemd/{{ item }}'
+    dest: '/etc/systemd/system/{{ item }}'
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - shadow-ha-sync.service
+    - shadow-ha-sync.timer
+    - shadow-ha-apply.service
+    - shadow-ha-apply.path
+    - jumpserver-ha-update.service
+    - jumpserver-ha-update.timer
+  notify: Reload systemd
+
+- name: Install the configured pull calendar
+  ansible.builtin.lineinfile:
+    path: /etc/systemd/system/shadow-ha-sync.timer
+    regexp: '^OnCalendar='
+    line: 'OnCalendar={{ jumpserver_ha_sync_interval }}'
+  notify: Reload systemd
+
+- name: Write role configuration
+  ansible.builtin.copy:
+    dest: /etc/jumpserver-ha/role.conf
+    owner: root
+    group: '{{ jumpserver_ha_service_user }}'
+    mode: '0640'
+    content: |
+      JUMPSERVER_HA_ROLE={{ jumpserver_ha_role }}
+      JUMPSERVER_HA_ACTIVE_ADDRESS={{ jumpserver_ha_active_address }}
+      JUMPSERVER_HA_SSH_PORT={{ jumpserver_ha_ssh_port }}
+      JUMPSERVER_HA_VIP={{ jumpserver_ha_vip }}
+      JUMPSERVER_HA_EXPORT_USER={{ jumpserver_ha_export_user }}
+      JUMPSERVER_HA_SYNC_SECRETS={{ jumpserver_ha_sync_secrets | bool | lower }}
+
+- name: Write synchronized path allow-list
+  ansible.builtin.copy:
+    dest: /etc/jumpserver-ha/sync-paths
+    owner: root
+    group: '{{ jumpserver_ha_service_user }}'
+    mode: '0640'
+    content: '{{ jumpserver_ha_sync_paths | join("\n") }}\n'
+
+- name: Write synchronized user policy
+  ansible.builtin.copy:
+    dest: /etc/jumpserver-ha/sync-users
+    owner: root
+    group: '{{ jumpserver_ha_service_user }}'
+    mode: '0640'
+    content: '{{ jumpserver_ha_sync_users | join("\n") }}\n'
+
+- name: Mark only the active node for GR collection
+  ansible.builtin.file:
+    path: /etc/jumpserver-ha/active
+    state: '{{ "touch" if jumpserver_ha_role == "active" else "absent" }}'
     owner: root
     group: root
     mode: '0644'
 
-- name: Install the operational runbook
+- name: Install role-aware MOTD
   ansible.builtin.copy:
-    src: '{{ role_path }}/README.md'
+    src: '{{ role_path }}/../../../templates/motd-standby'
+    dest: /etc/profile.d/99-shadow-ha-warning.sh
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install operational runbook
+  ansible.builtin.copy:
+    src: '{{ role_path }}/../../../docs/STANDBY-RUNBOOK.md'
     dest: '{{ jumpserver_ha_runbook_path }}'
     owner: root
     group: root
     mode: '0644'
 
-- name: Install GR collection unit templates on every peer
-  ansible.builtin.template:
-    src: '{{ item }}'
-    dest: '/etc/systemd/system/{{ item | regex_replace("\\.j2$", "") }}'
-    owner: root
-    group: root
-    mode: '0644'
-  loop:
-    - gr-config-collect@.service.j2
-    - gr-config-collect@.timer.j2
-  notify: Reload systemd
+- name: Install standby private synchronization key
+  ansible.builtin.copy:
+    src: '{{ jumpserver_ha_sync_private_key_path }}'
+    dest: /etc/jumpserver-ha/keys/sync_ed25519
+    owner: '{{ jumpserver_ha_service_user }}'
+    group: '{{ jumpserver_ha_service_user }}'
+    mode: '0600'
+  when: jumpserver_ha_role == 'standby'
+  no_log: true
 
-- name: Keep operational collection timers disabled on the standby
-  ansible.builtin.systemd:
-    name: 'gr-config-collect@{{ item }}.timer'
-    enabled: false
-    state: stopped
-  loop: '{{ jumpserver_ha_collection_pools | default([]) }}'
+- name: Pin active host key on standby
+  ansible.builtin.copy:
+    content: '{{ jumpserver_ha_active_known_host }}\n'
+    dest: /etc/jumpserver-ha/active_known_hosts
+    owner: '{{ jumpserver_ha_service_user }}'
+    group: '{{ jumpserver_ha_service_user }}'
+    mode: '0644'
   when: jumpserver_ha_role == 'standby'
 
-# The exporter, restricted authorized_keys entry, service and timer are supplied
-# as templates in the next implementation increment. No service is enabled by
-# this design-only role skeleton.
+- name: Create active exporter group
+  ansible.builtin.group:
+    name: '{{ jumpserver_ha_export_user }}'
+    system: true
+  when: jumpserver_ha_role == 'active'
+
+- name: Create restricted active exporter account
+  ansible.builtin.user:
+    name: '{{ jumpserver_ha_export_user }}'
+    group: '{{ jumpserver_ha_export_user }}'
+    home: /var/lib/shadow-export
+    shell: /bin/sh
+    system: true
+    create_home: true
+  when: jumpserver_ha_role == 'active'
+
+- name: Create exporter SSH directory
+  ansible.builtin.file:
+    path: /var/lib/shadow-export/.ssh
+    state: directory
+    owner: '{{ jumpserver_ha_export_user }}'
+    group: '{{ jumpserver_ha_export_user }}'
+    mode: '0700'
+  when: jumpserver_ha_role == 'active'
+
+- name: Authorize only the forced HA exporter command
+  ansible.builtin.copy:
+    content: 'restrict,command="sudo -n /usr/local/libexec/shadow-ha/export" {{ jumpserver_ha_standby_sync_public_key }}\n'
+    dest: /var/lib/shadow-export/.ssh/authorized_keys
+    owner: '{{ jumpserver_ha_export_user }}'
+    group: '{{ jumpserver_ha_export_user }}'
+    mode: '0600'
+  when: jumpserver_ha_role == 'active'
+
+- name: Permit only the fixed privileged exporter
+  ansible.builtin.copy:
+    content: '{{ jumpserver_ha_export_user }} ALL=(root) NOPASSWD: /usr/local/libexec/shadow-ha/export\n'
+    dest: /etc/sudoers.d/shadow-ha-export
+    owner: root
+    group: root
+    mode: '0440'
+    validate: '/usr/sbin/visudo -cf %s'
+  when: jumpserver_ha_role == 'active'
+
+- name: Keep passive synchronization disabled on active
+  ansible.builtin.systemd:
+    name: '{{ item }}'
+    enabled: false
+    state: stopped
+  loop:
+    - shadow-ha-sync.timer
+    - shadow-ha-apply.path
+  when: jumpserver_ha_role == 'active'
+
+- name: Configure passive synchronization activation
+  ansible.builtin.systemd:
+    name: '{{ item }}'
+    enabled: '{{ jumpserver_ha_enable_sync | bool }}'
+    state: '{{ "started" if jumpserver_ha_enable_sync else "stopped" }}'
+  loop:
+    - shadow-ha-sync.timer
+    - shadow-ha-apply.path
+  when: jumpserver_ha_role == 'standby'
+
+- name: Keep the GR scheduler disabled on standby
+  ansible.builtin.systemd:
+    name: gr-config-collect.timer
+    enabled: false
+    state: stopped
+  when: jumpserver_ha_role == 'standby'
+  failed_when: false

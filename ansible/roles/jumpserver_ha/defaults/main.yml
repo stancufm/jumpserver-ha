@@ -4,13 +4,19 @@ jumpserver_ha_role: standby
 jumpserver_ha_active_address: 192.0.2.10
 jumpserver_ha_ssh_port: 22
 jumpserver_ha_export_user: shadow-export
+jumpserver_ha_service_user: shadow-ha
 jumpserver_ha_sync_interval: '*-*-* *:0/5:00'
-jumpserver_ha_sync_paths: []
+jumpserver_ha_sync_paths:
+  - /etc/gr
+  - /var/lib/gr/config-archive
+  - /var/lib/gr-collector
+jumpserver_ha_sync_users:
+  - auto
 jumpserver_ha_sync_secrets: false
+jumpserver_ha_enable_sync: false
 jumpserver_ha_standby_sync_public_key: ''
 jumpserver_ha_active_known_host: ''
-jumpserver_ha_sync_private_key_path: /etc/jumpserver-ha/keys/sync_ed25519
+jumpserver_ha_sync_private_key_path: ''
 jumpserver_ha_runbook_path: /etc/jumpserver-ha/README.md
-jumpserver_ha_collection_pools: []
-jumpserver_ha_collection_timer_calendar: '*-*-* *:0/15:00'
-jumpserver_ha_collection_timer_jitter: 2m
+jumpserver_ha_gr_user: gr-collector
+jumpserver_ha_gr_group: gr-config
