@@ -36,6 +36,13 @@ accounts remain owned by their packages or application installers, so their
 numeric identities cannot silently collide between independently installed
 peers. Deleted users are still not removed automatically.
 
+Primary user groups remain identity-critical and must have the same GID on both
+peers. Existing supplementary groups are matched by name, because package-owned
+groups such as `sudo`, `www-data` or application access groups can legitimately
+have different numeric GIDs after independent installations. Home payloads keep
+their numeric file ownership; application paths with local service accounts are
+normalized back to the standby's local service identities after replication.
+
 ## Package reconciliation
 
 Synchronization records the active package set and writes a proposal on the

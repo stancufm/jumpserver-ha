@@ -37,6 +37,10 @@ differences are not forced automatically.
    In full-clone mode, validate local login and password aging with a designated
    test account; never print `/etc/shadow` or private credential files.
 5. Review the package proposal; install only approved missing prerequisites.
+
+The selected user's UID and primary GID must match the active node. Different
+numeric GIDs for existing supplementary package groups are expected and are
+resolved by group name; do not renumber local system groups to make them match.
 6. Move/promote the VIP according to the network runbook.
 7. Enable only approved GR timers after the standby is authoritative.
 

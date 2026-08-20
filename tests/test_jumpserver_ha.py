@@ -152,6 +152,10 @@ class StaticContractTests(unittest.TestCase):
         self.assertIn("does not match the standby policy", apply)
         self.assertIn("chpasswd --encrypted", apply)
         self.assertIn('usermod --groups "$supplementary"', apply)
+        self.assertIn('primary-group-names', apply)
+        self.assertIn('groupadd "$group_name"', apply)
+        self.assertIn('tar --numeric-owner --acls --xattrs -xzf', apply)
+        self.assertNotIn('tar --no-same-owner', apply)
         self.assertIn("rm -f -- \"$archive\"", apply)
         self.assertNotIn("chpasswd --encrypted $", apply)
 

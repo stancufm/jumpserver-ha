@@ -47,6 +47,13 @@ same reviewed packages/application installers on both peers. This avoids
 replacing service-account authentication and UID policy with data from another
 installation.
 
+Selected users and their primary groups are identity-critical: a UID or primary
+GID conflict stops apply. Supplementary groups are reconciled by name so that
+independently installed package/service groups do not require the same numeric
+GID. The apply step never renumbers an existing local system group. Numeric file
+ownership is retained for selected homes, while known application paths are
+restored to the standby's local service identities after replication.
+
 ## Packages
 
 Package inventory is data, not an instruction. Synchronization only writes a

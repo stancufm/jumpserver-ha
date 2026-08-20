@@ -21,7 +21,10 @@ exec 9>"${state_dir}/apply.lock"
 flock -n 9 || { echo 'SYNC_APPLY_STATUS=busy'; exit 0; }
 stage=$(mktemp -d "${state_dir}/apply.XXXXXX")
 trap 'rm -rf -- "$stage"' EXIT
-tar --no-same-owner --acls --xattrs -xzf "$archive" -C "$stage"
+# The archive is produced by the pinned active exporter and is applied by root.
+# Preserve numeric ownership in the private staging directory so that the later
+# rsync of a selected home does not turn every file into root:root.
+tar --numeric-owner --acls --xattrs -xzf "$archive" -C "$stage"
 [[ -d "$stage/metadata" && -d "$stage/rootfs" ]] || { echo 'Incomplete staged archive.' >&2; exit 2; }
 grep -qxF 'format=shadow-ha-v3' "$stage/metadata/manifest" || { echo 'Unsupported archive format.' >&2; exit 2; }
 full_clone=$(awk -F= '$1 == "full_clone" {print $2}' "$stage/metadata/manifest")
@@ -35,6 +38,7 @@ configured_full_clone="${JUMPSERVER_HA_FULL_CLONE:-${JUMPSERVER_HA_SYNC_SECRETS:
 }
 
 cut -f1 "$stage/metadata/users.tsv" | LC_ALL=C sort > "$stage/metadata/user-names"
+cut -f4 "$stage/metadata/users.tsv" | LC_ALL=C sort -u > "$stage/metadata/primary-group-names"
 cut -d: -f1 "$stage/metadata/shadow" | LC_ALL=C sort > "$stage/metadata/shadow-names"
 if [[ "$full_clone" == true ]]; then
   cmp -s "$stage/metadata/user-names" "$stage/metadata/shadow-names" || {
@@ -53,14 +57,24 @@ while IFS=$'\t' read -r group_name group_gid; do
   }
   existing_by_name=$(getent group "$group_name" || true)
   existing_by_gid=$(getent group "$group_gid" || true)
+  is_primary=false
+  grep -qxF "$group_name" "$stage/metadata/primary-group-names" && is_primary=true
   if [[ -n "$existing_by_name" ]]; then
-    [[ "$(cut -d: -f3 <<<"$existing_by_name")" == "$group_gid" ]] || {
-      echo "Group conflict for $group_name" >&2
-      exit 2
-    }
+    if [[ "$is_primary" == true ]]; then
+      [[ "$(cut -d: -f3 <<<"$existing_by_name")" == "$group_gid" ]] || {
+        echo "Primary group conflict for $group_name" >&2
+        exit 2
+      }
+    fi
   elif [[ -n "$existing_by_gid" ]]; then
-    echo "GID conflict for $group_name ($group_gid)" >&2
-    exit 2
+    if [[ "$is_primary" == true ]]; then
+      echo "Primary GID conflict for $group_name ($group_gid)" >&2
+      exit 2
+    fi
+    # Supplementary service groups are package-owned and can legitimately use
+    # another GID on an independently installed peer. Membership is applied by
+    # group name, so allocate a safe local GID instead of rewriting system IDs.
+    groupadd "$group_name"
   else
     groupadd --gid "$group_gid" "$group_name"
   fi
