@@ -86,5 +86,11 @@ configurația `/etc/gr` și starea collectorului dedicat pot fi incluse în
 allow-list. Standby-ul le primește, dar păstrează timerele operaționale oprite
 până la promovare. `jumpserver-ha` rămâne singura autoritate de replicare.
 
+Installerul acordă unui cont `gr-collector` existent numai drept de traversare
+pe `/etc/jumpserver-ha`, printr-un ACL dedicat. Astfel poate verifica markerul
+fix și world-readable `active`, fără să poată lista directorul sau citi
+configurația HA protejată la nivel de grup. GR aplică același ACL când este
+instalat după HA, deci ordinea instalării nu slăbește protecția de rol.
+
 MOTD afișează rolul, politica parțială/full-clone, ultima aplicare și comanda
 pentru propunerea de pachete.

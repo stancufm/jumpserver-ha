@@ -107,6 +107,12 @@ The standby pulls them but keeps every GR operational timer disabled until a
 reviewed promotion. `jumpserver-ha` is the single replication authority; GR
 does not create a parallel HA transport.
 
+The installer uses a user-specific ACL to give an existing `gr-collector`
+account traversal-only access to `/etc/jumpserver-ha`. This permits testing the
+fixed, world-readable `active` marker without listing the directory or reading
+group-protected HA configuration. GR applies the same ACL when it is installed
+after HA, so installation order does not weaken role fencing.
+
 The login MOTD displays the role, last successful apply and the package-plan
 command, and states whether partial or full-clone policy is active. See the
 [standby runbook](docs/STANDBY-RUNBOOK.md) for validation and promotion.
