@@ -94,3 +94,6 @@ instalat după HA, deci ordinea instalării nu slăbește protecția de rol.
 
 MOTD afișează rolul, politica parțială/full-clone, ultima aplicare și comanda
 pentru propunerea de pachete.
+Numai rolul și modul de clonare, fără date sensibile, sunt expuse pentru MOTD
+prin `/etc/jumpserver-ha-role.conf`. Dacă metadatele publice lipsesc, fragmentul
+de profil revine fără să închidă shell-ul utilizatorului.

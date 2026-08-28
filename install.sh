@@ -186,7 +186,12 @@ JUMPSERVER_HA_EXPORT_USER=shadow-export
 JUMPSERVER_HA_FULL_CLONE=$full_clone
 JUMPSERVER_HA_SYNC_SECRETS=$full_clone
 EOF
+cat > "$destdir/etc/jumpserver-ha-role.conf" <<EOF
+JUMPSERVER_HA_ROLE=$role
+JUMPSERVER_HA_FULL_CLONE=$full_clone
+EOF
 chmod 0644 "$destdir/etc/jumpserver-ha/role.conf"
+chmod 0644 "$destdir/etc/jumpserver-ha-role.conf"
 printf '%s\n' "${sync_paths[@]}" > "$destdir/etc/jumpserver-ha/sync-paths"
 chmod 0640 "$destdir/etc/jumpserver-ha/sync-paths"
 if [[ "$sync_users_auto" == true ]]; then

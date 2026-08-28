@@ -69,6 +69,11 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue((root / "usr/local/libexec/shadow-ha/export").is_file())
         role = (root / "etc/jumpserver-ha/role.conf").read_text(encoding="utf-8")
         self.assertIn("JUMPSERVER_HA_ROLE=active", role)
+        public_role = (root / "etc/jumpserver-ha-role.conf").read_text(
+            encoding="utf-8")
+        self.assertEqual(
+            public_role,
+            "JUMPSERVER_HA_ROLE=active\nJUMPSERVER_HA_FULL_CLONE=false\n")
 
     def test_standby_staged_install_contains_split_units_and_no_enable(self):
         root = self.staged_install("standby")
@@ -186,6 +191,9 @@ class StaticContractTests(unittest.TestCase):
         self.assertIn("users, home directories", motd)
         self.assertIn("shadow-ha-packages plan", motd)
         self.assertIn("Full-clone mode", motd)
+        self.assertIn("config=/etc/jumpserver-ha-role.conf", motd)
+        self.assertIn("return 0 2>/dev/null || exit 0", motd)
+        self.assertNotIn('[ -r "$config" ] || exit 0', motd)
 
     def test_full_clone_archive_contract_protects_local_authentication(self):
         exporter = pathlib.Path("bin/shadow-ha-export").read_text(encoding="utf-8")
