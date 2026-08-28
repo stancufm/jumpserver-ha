@@ -87,6 +87,16 @@ class InstallerTests(unittest.TestCase):
         self.assertIn(
             "/var/lib/shadow-export/.ssh/authorized_keys", installer)
 
+    def test_export_staging_does_not_depend_on_small_tmpfs(self):
+        exporter = pathlib.Path("bin/shadow-ha-export").read_text(encoding="utf-8")
+        installer = pathlib.Path("install.sh").read_text(encoding="utf-8")
+        self.assertIn(
+            "SHADOW_HA_EXPORT_STATE_DIR:-/var/lib/shadow-ha-export-state", exporter)
+        self.assertNotIn("mktemp -d /tmp/shadow-ha-export", exporter)
+        self.assertIn(
+            "install -d -o root -g root -m 0700 /var/lib/shadow-ha-export-state",
+            installer)
+
     def test_full_clone_policy_is_explicit_and_persisted(self):
         root = self.staged_install("standby", "--full-clone")
         role = (root / "etc/jumpserver-ha/role.conf").read_text(encoding="utf-8")
@@ -129,7 +139,10 @@ class ExportContractTests(unittest.TestCase):
             (config / "sync-paths").write_text(str(approved) + "\n", encoding="utf-8")
             (config / "sync-users").write_text("", encoding="utf-8")
             archive = root / "export.tar.gz"
-            environment = dict(os.environ, SHADOW_HA_CONFIG_DIR=str(config))
+            environment = dict(
+                os.environ,
+                SHADOW_HA_CONFIG_DIR=str(config),
+                SHADOW_HA_EXPORT_STATE_DIR=str(root / "export-state"))
             with archive.open("wb") as output:
                 result = subprocess.run(["bash", "bin/shadow-ha-export"], env=environment,
                                         stdout=output, stderr=subprocess.PIPE)

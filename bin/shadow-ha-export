@@ -5,6 +5,7 @@ readonly config_dir="${SHADOW_HA_CONFIG_DIR:-/etc/jumpserver-ha}"
 readonly role_file="$config_dir/role.conf"
 readonly paths_file="$config_dir/sync-paths"
 readonly users_file="$config_dir/sync-users"
+readonly export_state_dir="${SHADOW_HA_EXPORT_STATE_DIR:-/var/lib/shadow-ha-export-state}"
 
 [[ -r "$role_file" && -r "$paths_file" && -r "$users_file" ]] || {
   echo 'HA exporter configuration is incomplete.' >&2
@@ -22,7 +23,21 @@ readonly full_clone="${JUMPSERVER_HA_FULL_CLONE:-${JUMPSERVER_HA_SYNC_SECRETS:-f
   exit 2
 }
 
-stage=$(mktemp -d /tmp/shadow-ha-export.XXXXXX)
+[[ "$export_state_dir" == /* && "$export_state_dir" != / ]] || {
+  echo 'Unsafe exporter state directory.' >&2
+  exit 2
+}
+if [[ "$(id -u)" -eq 0 ]]; then
+  install -d -o root -g root -m 0700 "$export_state_dir"
+else
+  [[ -n "${SHADOW_HA_EXPORT_STATE_DIR:-}" ]] || {
+    echo 'The production exporter must run as root.' >&2
+    exit 2
+  }
+  install -d -m 0700 "$export_state_dir"
+fi
+[[ ! -L "$export_state_dir" ]] || { echo 'Exporter state directory may not be a symlink.' >&2; exit 2; }
+stage=$(mktemp -d "${export_state_dir}/export.XXXXXX")
 trap 'rm -rf -- "$stage"' EXIT
 install -d -m 0700 "$stage/metadata" "$stage/rootfs"
 

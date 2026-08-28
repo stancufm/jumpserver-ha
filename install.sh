@@ -254,6 +254,7 @@ if [[ "$role" == standby ]]; then
   [[ ${candidate:-} ]] && rm -f "$candidate"
   systemctl disable --now gr-config-collect.timer 2>/dev/null || true
 else
+  install -d -o root -g root -m 0700 /var/lib/shadow-ha-export-state
   getent group shadow-export >/dev/null || groupadd --system shadow-export
   if ! getent passwd shadow-export >/dev/null; then
     useradd --system --gid shadow-export --home-dir /var/lib/shadow-export --create-home \

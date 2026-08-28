@@ -46,6 +46,11 @@ have different numeric GIDs after independent installations. Home payloads keep
 their numeric file ownership; application paths with local service accounts are
 normalized back to the standby's local service identities after replication.
 
+The active exporter stages the selected payload under the root-only
+`/var/lib/shadow-ha-export-state` directory. This avoids assuming that `/tmp`
+has enough capacity for complete home directories; the location can be
+overridden with `SHADOW_HA_EXPORT_STATE_DIR` for a dedicated filesystem.
+
 ## Package reconciliation
 
 Synchronization records the active package set and writes a proposal on the

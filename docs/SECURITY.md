@@ -45,6 +45,9 @@ private keys. The incoming archive is mode 0600 in a mode 0700 service state
 directory and is deleted after a successful apply; a failed apply retains it
 for diagnosis/retry. No plaintext password or GPG passphrase is copied, and a
 GPG agent may still require interactive unlock after reboot.
+The active's temporary export tree is created mode 0700 under
+`/var/lib/shadow-ha-export-state` and removed on every normal or failed exporter
+exit; it is not placed in a size-limited shared `/tmp` tmpfs.
 
 System accounts are not copied from `/etc/shadow`. They are created by the
 same reviewed packages/application installers on both peers. This avoids
