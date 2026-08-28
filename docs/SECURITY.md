@@ -78,3 +78,9 @@ The standby fetch and apply steps both stop when the configured VIP is present
 locally. GR collection timers remain disabled on standby. Promotion requires a
 human to exclude split-brain, inspect the last successful synchronization and
 enable only the approved operational timers.
+
+The locked GR collector receives only a user-specific execute/traverse ACL on
+`/etc/jumpserver-ha`. The directory remains non-listable and protected files
+remain group-only; the permission exists solely so the collector can test the
+known `active` marker path. Both installers apply this rule when the other
+project is already present.

@@ -139,7 +139,7 @@ for input in "$standby_public_key" "$active_known_hosts"; do
   [[ -z "$input" || -r "$input" ]] || { echo "Cannot read trust input: $input" >&2; exit 2; }
 done
 
-required_packages=(bash openssh-client rsync tar gzip python3 systemd iproute2 util-linux)
+required_packages=(bash openssh-client rsync tar gzip python3 systemd iproute2 util-linux acl)
 if [[ "$role" == active ]]; then
   required_packages+=(openssh-server sudo)
 fi
@@ -228,6 +228,12 @@ fi
 install -d -o root -g shadow-ha -m 0750 /etc/jumpserver-ha
 install -d -o shadow-ha -g shadow-ha -m 0700 /etc/jumpserver-ha/keys
 chown root:shadow-ha /etc/jumpserver-ha/role.conf /etc/jumpserver-ha/sync-paths /etc/jumpserver-ha/sync-users
+# GR may be installed before or after this project.  When its locked collector
+# already exists, grant only directory traversal so it can test the fixed,
+# world-readable active marker; it cannot list or read protected HA files.
+if getent passwd gr-collector >/dev/null 2>&1; then
+  setfacl -m u:gr-collector:--x /etc/jumpserver-ha
+fi
 install -d -o shadow-ha -g shadow-ha -m 0700 /var/lib/shadow-ha /var/lib/shadow-ha-sync
 
 if [[ "$role" == standby ]]; then

@@ -47,6 +47,11 @@ class PackagePlanTests(unittest.TestCase):
 
 
 class InstallerTests(unittest.TestCase):
+    def test_gr_collector_marker_access_is_acl_backed_and_least_privilege(self):
+        installer = pathlib.Path("install.sh").read_text(encoding="utf-8")
+        self.assertIn("util-linux acl)", installer)
+        self.assertIn("setfacl -m u:gr-collector:--x /etc/jumpserver-ha", installer)
+
     def staged_install(self, role, *extra):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
