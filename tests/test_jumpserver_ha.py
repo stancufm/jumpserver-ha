@@ -97,6 +97,14 @@ class InstallerTests(unittest.TestCase):
             "install -d -o root -g root -m 0700 /var/lib/shadow-ha-export-state",
             installer)
 
+    def test_dotted_linux_account_names_are_supported(self):
+        installer = pathlib.Path("install.sh").read_text(encoding="utf-8")
+        exporter = pathlib.Path("bin/shadow-ha-export").read_text(encoding="utf-8")
+        apply = pathlib.Path("bin/shadow-ha-apply").read_text(encoding="utf-8")
+        self.assertIn("[a-z0-9_.-]", installer)
+        self.assertIn('replace(".", "")', exporter)
+        self.assertGreaterEqual(apply.count("[a-z0-9_.-]"), 4)
+
     def test_full_clone_policy_is_explicit_and_persisted(self):
         root = self.staged_install("standby", "--full-clone")
         role = (root / "etc/jumpserver-ha/role.conf").read_text(encoding="utf-8")

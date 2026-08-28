@@ -62,7 +62,7 @@ if requested == ["auto"]:
 else:
     selected = []
     for name in requested:
-        if name == "auto" or not name.replace("-", "").replace("_", "").isalnum():
+        if name == "auto" or not name.replace("-", "").replace("_", "").replace(".", "").isalnum():
             raise SystemExit("Invalid synchronized user: {}".format(name))
         try:
             selected.append(pwd.getpwnam(name))

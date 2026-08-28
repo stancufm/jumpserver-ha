@@ -24,6 +24,8 @@ Automatic user discovery selects normal `/home` accounts with UID 1000-59999.
 Service users and non-login accounts are excluded. Existing conflicting names,
 UIDs or GIDs stop the apply before home data is changed. Accounts and files are
 never deleted merely because they disappeared from the active account list.
+Linux account and group names containing dots are supported (for example,
+`first.last`) while path separators and control characters remain rejected.
 
 Partial mode is the reusable default: password hashes, private SSH/GPG keys,
 API credential files, password-store content and GR SSH audits are excluded.

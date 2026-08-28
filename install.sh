@@ -128,7 +128,7 @@ for path in "${sync_paths[@]}"; do
   }
 done
 for user in "${sync_users[@]}"; do
-  [[ "$user" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] || { echo "Unsafe sync user: $user" >&2; exit 2; }
+  [[ "$user" =~ ^[a-z_][a-z0-9_.-]*[$]?$ ]] || { echo "Unsafe sync user: $user" >&2; exit 2; }
 done
 
 if [[ -z "$destdir" && $(id -u) -ne 0 ]]; then
