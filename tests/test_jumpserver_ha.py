@@ -197,6 +197,10 @@ class StaticContractTests(unittest.TestCase):
         self.assertIn('primary-group-names', apply)
         self.assertIn('groupadd "$group_name"', apply)
         self.assertIn('tar --numeric-owner --acls --xattrs -xzf', apply)
+        self.assertIn(
+            'install -d -o shadow-ha -g shadow-ha -m 0700 "$state_dir"', apply)
+        self.assertNotIn(
+            'install -d -o root -g root -m 0750 "$state_dir"', apply)
         self.assertNotIn('tar --no-same-owner', apply)
         self.assertIn("rm -f -- \"$archive\"", apply)
         self.assertNotIn("chpasswd --encrypted $", apply)

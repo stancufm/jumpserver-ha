@@ -47,6 +47,10 @@ groups such as `sudo`, `www-data` or application access groups can legitimately
 have different numeric GIDs after independent installations. Home payloads keep
 their numeric file ownership; application paths with local service accounts are
 normalized back to the standby's local service identities after replication.
+The private synchronization state remains owned by the dedicated `shadow-ha`
+fetch account even after the root-only apply phase. This ownership invariant
+allows every later timer run to create the next locked incoming archive; apply
+must not convert the directory to `root:root` after its first success.
 
 The active exporter stages the selected payload under the root-only
 `/var/lib/shadow-ha-export-state` directory. This avoids assuming that `/tmp`

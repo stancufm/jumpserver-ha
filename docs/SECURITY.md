@@ -45,6 +45,9 @@ private keys. The incoming archive is mode 0600 in a mode 0700 service state
 directory and is deleted after a successful apply; a failed apply retains it
 for diagnosis/retry. No plaintext password or GPG passphrase is copied, and a
 GPG agent may still require interactive unlock after reboot.
+The state directory stays owned by the unprivileged `shadow-ha` fetch account
+with mode 0700 across the root apply boundary. Root owns the applied metadata
+files inside it, but must not take over the directory and break the next fetch.
 The active's temporary export tree is created mode 0700 under
 `/var/lib/shadow-ha-export-state` and removed on every normal or failed exporter
 exit; it is not placed in a size-limited shared `/tmp` tmpfs.

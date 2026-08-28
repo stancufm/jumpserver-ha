@@ -52,6 +52,12 @@ sudo shadow-ha-packages apply --yes --update
 Versiunile diferite și pachetele suplimentare rămân numai raportate. Nu se fac
 downgrade sau eliminări automate.
 
+Directorul privat de stare al sincronizării rămâne deținut de contul dedicat
+`shadow-ha` inclusiv după faza de aplicare care rulează ca root. Acest invariant
+permite fiecărei execuții ulterioare a timerului să creeze următoarea arhivă
+incoming blocată; aplicarea nu transformă directorul în `root:root` după primul
+succes.
+
 ## Instalarea unui server nou
 
 Rulat fără `--non-interactive`, `install.sh` solicită rolul, adresa fizică a

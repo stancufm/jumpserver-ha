@@ -16,7 +16,10 @@ if ip -4 -o addr show | grep -qF "${JUMPSERVER_HA_VIP:?missing VIP}/32"; then
   exit 0
 fi
 
-install -d -o root -g root -m 0750 "$state_dir"
+# Fetch runs as the dedicated shadow-ha account while apply runs as root.  Keep
+# the shared state directory private but owned by the fetch identity; otherwise
+# one successful apply would make every later timer run fail before fetching.
+install -d -o shadow-ha -g shadow-ha -m 0700 "$state_dir"
 exec 9>"${state_dir}/apply.lock"
 flock -n 9 || { echo 'SYNC_APPLY_STATUS=busy'; exit 0; }
 stage=$(mktemp -d "${state_dir}/apply.XXXXXX")
