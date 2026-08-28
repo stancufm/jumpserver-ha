@@ -116,3 +116,6 @@ after HA, so installation order does not weaken role fencing.
 The login MOTD displays the role, last successful apply and the package-plan
 command, and states whether partial or full-clone policy is active. See the
 [standby runbook](docs/STANDBY-RUNBOOK.md) for validation and promotion.
+Only the non-sensitive role and clone-mode flags are exposed to the login MOTD
+through `/etc/jumpserver-ha-role.conf`. If that public metadata is unavailable,
+the sourced profile fragment returns without terminating the user's shell.

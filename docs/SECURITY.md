@@ -84,3 +84,8 @@ The locked GR collector receives only a user-specific execute/traverse ACL on
 remain group-only; the permission exists solely so the collector can test the
 known `active` marker path. Both installers apply this rule when the other
 project is already present.
+
+The login MOTD reads only `/etc/jumpserver-ha-role.conf`, which contains the
+non-sensitive node role and clone-mode flag. It never reads the protected HA
+configuration. A missing public metadata file causes the sourced shell fragment
+to return safely instead of terminating the login shell.

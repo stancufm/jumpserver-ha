@@ -1,6 +1,6 @@
 #!/bin/sh
-config=/etc/jumpserver-ha/role.conf
-[ -r "$config" ] || exit 0
+config=/etc/jumpserver-ha-role.conf
+[ -r "$config" ] || { return 0 2>/dev/null || exit 0; }
 # shellcheck disable=SC1090
 . "$config"
 
