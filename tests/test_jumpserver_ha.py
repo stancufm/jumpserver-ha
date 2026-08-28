@@ -82,7 +82,7 @@ class InstallerTests(unittest.TestCase):
     def test_active_exporter_home_is_normalized_for_authorized_keys(self):
         installer = pathlib.Path("install.sh").read_text(encoding="utf-8")
         self.assertIn(
-            "usermod --home-dir /var/lib/shadow-export --shell /bin/sh shadow-export",
+            "usermod --home /var/lib/shadow-export --shell /bin/sh shadow-export",
             installer)
         self.assertIn(
             "/var/lib/shadow-export/.ssh/authorized_keys", installer)

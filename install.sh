@@ -262,7 +262,7 @@ else
   # Normalize legacy installations that used another home directory.  SSH
   # resolves authorized_keys relative to the passwd home, so the dedicated
   # account and every installer/updater path must agree on this location.
-  usermod --home-dir /var/lib/shadow-export --shell /bin/sh shadow-export
+  usermod --home /var/lib/shadow-export --shell /bin/sh shadow-export
   install -d -o shadow-export -g shadow-export -m 0700 /var/lib/shadow-export/.ssh
   if [[ -z "$standby_public_key" && "$non_interactive" == false ]]; then
     prompt_value standby_public_key 'Path to the standby synchronization public key'
