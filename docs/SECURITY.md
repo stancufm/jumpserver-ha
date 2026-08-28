@@ -11,6 +11,9 @@ after a complete archive has been atomically staged.
 The active node exposes no general shell. `shadow-export` accepts one key with
 `restrict` and a forced `sudo -n /usr/local/libexec/shadow-ha/export` command.
 The corresponding sudoers rule accepts no caller-supplied option or path.
+The installer normalizes this dedicated account's home to
+`/var/lib/shadow-export`, ensuring OpenSSH and the updater use the same guarded
+`authorized_keys` location even after an upgrade from a legacy installation.
 
 ## Archive validation and account safety
 
