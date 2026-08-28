@@ -2,6 +2,9 @@
 
 Reusable, pull-based active/standby replication for Debian jump servers.
 
+Release archives enforce Unix LF line endings for every Linux entrypoint, so a
+package built or tagged from Windows remains directly executable on Debian.
+
 The standby fetches a fixed export with its own unprivileged `shadow-ha`
 account. A separate local root helper applies only a validated archive. The
 active accepts the standby key through the restricted `shadow-export` account

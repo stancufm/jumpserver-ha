@@ -134,6 +134,13 @@ class ExportContractTests(unittest.TestCase):
 
 
 class StaticContractTests(unittest.TestCase):
+    def test_linux_entrypoints_use_lf_line_endings(self):
+        paths = [pathlib.Path("install.sh")]
+        paths.extend(path for path in pathlib.Path("bin").iterdir() if path.is_file())
+        for path in paths:
+            with self.subTest(path=str(path)):
+                self.assertNotIn(b"\r\n", path.read_bytes())
+
     def test_motd_mentions_users_homes_and_package_proposal(self):
         motd = pathlib.Path("templates/motd-standby").read_text(encoding="utf-8")
         self.assertIn("users, home directories", motd)

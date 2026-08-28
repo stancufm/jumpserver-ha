@@ -1,0 +1,7 @@
+* text=auto
+*.sh text eol=lf
+bin/* text eol=lf
+systemd/* text eol=lf
+templates/* text eol=lf
+*.py text eol=lf
+VERSION text eol=lf
