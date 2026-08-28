@@ -225,7 +225,8 @@ if ! getent passwd shadow-ha >/dev/null; then
   useradd --system --gid shadow-ha --home-dir /var/lib/shadow-ha --create-home \
     --shell /usr/sbin/nologin shadow-ha
 fi
-install -d -o root -g shadow-ha -m 0750 /etc/jumpserver-ha /etc/jumpserver-ha/keys
+install -d -o root -g shadow-ha -m 0750 /etc/jumpserver-ha
+install -d -o shadow-ha -g shadow-ha -m 0700 /etc/jumpserver-ha/keys
 chown root:shadow-ha /etc/jumpserver-ha/role.conf /etc/jumpserver-ha/sync-paths /etc/jumpserver-ha/sync-users
 install -d -o shadow-ha -g shadow-ha -m 0700 /var/lib/shadow-ha /var/lib/shadow-ha-sync
 

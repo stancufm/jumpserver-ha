@@ -3,7 +3,8 @@
 ## Split privilege
 
 Network retrieval runs as the dedicated, non-login `shadow-ha` service user.
-It can write only `/var/lib/shadow-ha-sync` and read its own private key and the
+It can write only `/var/lib/shadow-ha-sync` and its mode 0700 key directory, and
+read its own private key and the
 pinned active host key. A local root path unit starts `shadow-ha-apply` only
 after a complete archive has been atomically staged.
 

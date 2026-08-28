@@ -73,6 +73,12 @@ class InstallerTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIn("User=shadow-ha", service)
 
+    def test_runtime_key_directory_is_private_and_writable_by_sync_user(self):
+        installer = pathlib.Path("install.sh").read_text(encoding="utf-8")
+        self.assertIn(
+            "install -d -o shadow-ha -g shadow-ha -m 0700 /etc/jumpserver-ha/keys",
+            installer)
+
     def test_full_clone_policy_is_explicit_and_persisted(self):
         root = self.staged_install("standby", "--full-clone")
         role = (root / "etc/jumpserver-ha/role.conf").read_text(encoding="utf-8")
